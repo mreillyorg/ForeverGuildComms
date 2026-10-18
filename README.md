@@ -5,14 +5,29 @@ WoW: Forever 1.60.1 / Interface 16001 addon by Michael Reilly.
 ## Install (integrated Windows installer)
 
 1. **Extract All** from `ForeverGuildComms-0.3.0-beta.zip` into any convenient folder. Do not launch scripts directly from inside a compressed ZIP.
-2. Double-click **`Install-ForeverGuildComms.cmd`** in the extracted folder, next to the `ForeverGuildComms` subfolder.
+2. Open **`ForeverGuildComms\install`** and double-click **`Install-ForeverGuildComms.cmd`**. Installation instructions are in `ForeverGuildComms\install\INSTALL-README.txt`.
 3. Choose your WoW Forever client folder if it is not found automatically. You can supply the client (`_classic_beta_`), `Interface`, or `Interface\AddOns` directory.
 4. Restart WoW Forever or enter `/reload`, then open **Settings > AddOns > Forever Guild Comms** (or `/fgc options`).
 5. If Titan Panel is installed, enable the **Guild Comms** Data Broker plugin.
 
-The integrated installer reads `ForeverGuildComms.toc` and copies **only the `.toc` and loadable Lua/XML files**. Files that are already identical are skipped. It never copies the README, tests, or installer scripts into the AddOns folder, and it does not replace your entire addon directory. Before overwriting addon files, it backs up those specific previous files to `Interface\AddOnBackups`. It leaves all character settings and SavedVariables untouched.
+The integrated installer reads `ForeverGuildComms.toc` and copies **only the `.toc` and loadable Lua/XML files**. Files that are already identical are skipped. It never copies the README, tests, or `install` directory into the AddOns folder, and it does not replace your entire addon directory. Before overwriting addon files, it backs up those specific previous files to `Interface\AddOnBackups`. It leaves all character settings and SavedVariables untouched.
 
-**Manual installation:** Copy the `ForeverGuildComms` subfolder from the extracted archive into `World of Warcraft\_classic_beta_\Interface\AddOns\`. The required folder is `AddOns\ForeverGuildComms\ForeverGuildComms.toc`. Manual copying also copies the included documentation and tests unless you omit them yourself; neither is loaded by WoW.
+**Manual installation:** Copy the `ForeverGuildComms` subfolder from the extracted archive into `World of Warcraft\_classic_beta_\Interface\AddOns\`. The required folder is `AddOns\ForeverGuildComms\ForeverGuildComms.toc`. Manual copying also copies the included documentation, tests and `install` folder unless you omit them yourself; neither is loaded by WoW.
+
+## BigWigsMods/packager releases
+
+This source archive now contains `.pkgmeta` and `.github/workflows/package.yml`
+for automatic packaging from GitHub tags. The BigWigs packager recognises
+Forever (`## Interface: 16001`) without manually overriding the game type.
+For CurseForge-style distribution, its release ZIP excludes `install/`,
+`tests/` and other repository-only files. **This manual ZIP still includes
+the integrated Windows installer.**
+
+To set up your own GitHub repository and publish releases, follow
+[`PACKAGING.md`](PACKAGING.md). The workflow requires you to push the
+extracted addon's **contents** as the repository root; it does not publish
+until you push an annotated version tag. No publishing accounts or project
+IDs are configured automatically.
 
 ## Features
 
