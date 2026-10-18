@@ -186,7 +186,7 @@ function Test-SameContents {
 $exitCode = 0
 try {
     Write-Host ''
-    Write-Host 'ForeverGuildComms 0.3.0-beta - integrated installer' -ForegroundColor Green
+    Write-Host 'ForeverGuildComms 0.4.0-beta - integrated installer' -ForegroundColor Green
     Write-Host '---------------------------------------------------'
 
     if (-not (Test-Path -LiteralPath $addonSource -PathType Container)) {

@@ -43,6 +43,9 @@ _G.Settings={
 }
 local A={}
 assert(loadfile(base.."Core.lua"))("ForeverGuildComms",A)
+for _, module in ipairs({"Languages.lua", "Accents.lua", "RaceProfiles.lua"}) do
+    assert(loadfile(base .. module))("ForeverGuildComms", A)
+end
 assert(loadfile(base.."Options.lua"))("ForeverGuildComms",A)
 A:Initialize()
 assert(A.db.templates.login == "My special greeting, {name}!", "do not overwrite existing custom wording")
@@ -61,7 +64,7 @@ for _,widget in ipairs(widgets) do
     if rawget(widget, "numeric") then table.insert(numericInputs,widget) end
 end
 assert(#radios == 2, "two radio options should exist")
-assert(#useDefaultButtons == 6, "four template resets and two timing resets")
+assert(#useDefaultButtons == 9, "four template resets, two timing resets and three voice resets")
 assert(#numericInputs == 2, "numeric input controls for spacing and cooldown")
 assert(numericInputs[1].text == "3" and numericInputs[2].text == "3600", "numeric fields show sanitized saved values")
 numericInputs[1]:SetText("12")

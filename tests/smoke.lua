@@ -19,6 +19,9 @@ _G.ERR_GUILD_JOIN_S = "%s has joined the guild."
 _G.date = function() return "12:00" end
 local A = {}
 assert(loadfile(base .. "Core.lua"))("ForeverGuildComms", A)
+for _, module in ipairs({"Languages.lua", "Accents.lua", "RaceProfiles.lua"}) do
+    assert(loadfile(base .. module))("ForeverGuildComms", A)
+end
 assert(loadfile(base .. "Roster.lua"))("ForeverGuildComms", A)
 assert(loadfile(base .. "Alerts.lua"))("ForeverGuildComms", A)
 A.db = {enabled=true, greetLogin=true, greetJoin=true, congratulateLevel=true, craftingAlerts=true, groupAlerts=true,

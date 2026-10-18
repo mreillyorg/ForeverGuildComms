@@ -1,4 +1,4 @@
-FOREVER GUILD COMMS 0.3.0-beta - Integrated Windows Installer
+FOREVER GUILD COMMS 0.4.0-beta - Integrated Windows Installer
 ============================================================
 
 START HERE: after Extract All, open ForeverGuildComms\install and double-click Install-ForeverGuildComms.cmd.

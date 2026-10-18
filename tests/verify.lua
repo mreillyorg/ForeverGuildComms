@@ -24,6 +24,9 @@ _G.CreateFrame = function()
 end
 local A = {}
 assert(loadfile(base .. "Core.lua"))("ForeverGuildComms", A)
+for _, module in ipairs({"Languages.lua", "Accents.lua", "RaceProfiles.lua"}) do
+    assert(loadfile(base .. module))("ForeverGuildComms", A)
+end
 A.db = {enabled=true, outgoingMode="verify", messageSpacing=6}
 A.UpdateBroker = function() end
 local shown = 0

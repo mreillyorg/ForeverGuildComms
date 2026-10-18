@@ -42,13 +42,13 @@ function A:AcceptRoster(members, count, online, baseline)
                     and previous.online and member.online
                     and type(previous.level) == "number" and previous.level > 0
                     and type(member.level) == "number" and member.level > previous.level then
-                    local msg = self:Format(self.db.templates.level, {
+                    local msg = self:CommsText("level", {
                         name=member.name, level=member.level,
                     })
                     self:QueueGuild(msg, "level:"..key..":"..member.level, 1800)
                 end
                 if self.db.enabled and self.db.greetLogin and not previous.online and member.online then
-                    local msg = self:Format(self.db.templates.login, {name=member.name, level=member.level})
+                    local msg = self:CommsText("login", {name=member.name, level=member.level})
                     self:QueueGuild(msg, "login:"..key, self.db.loginCooldown)
                 end
             end
@@ -111,7 +111,7 @@ function A:OnSystemGuildJoin(message)
     escaped = escaped:gsub("%%%%s", "(.+)")
     local newMember = message:match("^" .. escaped .. "$")
     if not newMember or self:IsSelf(newMember) then return end
-    local text = self:Format(self.db.templates.join, {name=newMember})
+    local text = self:CommsText("join", {name=newMember})
     self:QueueGuild(text, "join:" .. self:Key(newMember), 300)
 end
 function A:SetupRoster()

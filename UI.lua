@@ -254,11 +254,12 @@ end
 function A:RequestText()
     local activity = (self.activityEdit:GetText() or ""):match("^%s*(.-)%s*$")
     if activity == "" then activity = "[activity]" end
-    return self:Format(self.db.templates.help, {
+    local custom = self.db.templates.help ~= self.defaults.templates.help
+    return self:CommsText("help", {
         activity = activity,
-        type = self.GetActivityType(),
-        myroles = self:RoleText(self.char.myRoles, "Flexible"),
-        needed = self:RoleText(self.char.needRoles, "Any role"),
+        type = custom and self.GetActivityType() or self:LocalizeActivityType(self.GetActivityType()),
+        myroles = custom and self:RoleText(self.char.myRoles, "Flexible") or self:LocalizeRoleText(self.char.myRoles, "flexible"),
+        needed = custom and self:RoleText(self.char.needRoles, "Any role") or self:LocalizeRoleText(self.char.needRoles, "any"),
         name = self.playerName,
     })
 end

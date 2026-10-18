@@ -1,7 +1,9 @@
 local ADDON, A = ...
 _G.ForeverGuildComms = A
 A.name = ADDON
-A.version = "0.3.0-beta"
+A.version = "0.4.0-beta"
+-- These language preferences are per character; old account-wide settings stay intact.
+A.voiceDefaults = {language="en", accent="none", raceFilter=true, accentStrength="subtle"}
 A.defaults = {
     enabled = true,
     outgoingMode = "automatic", -- "automatic" or "verify" for roster-triggered messages
@@ -87,13 +89,32 @@ function A:IsSelf(name, guid)
         (self.selfKeys and self.selfKeys[withoutRealm])) then return true end
     return false
 end
+-- Avoid cutting off the continuation bytes of a UTF-8 character when a
+-- translated message reaches the game's chat-message byte limit.
+function A:ChatLimit(text)
+    text = tostring(text or "")
+    if #text <= 250 then return text end
+    local limit = 250
+    while limit > 0 do
+        local byte = text:byte(limit + 1)
+        if not byte or byte < 128 or byte >= 192 then break end
+        limit = limit - 1
+    end
+    return text:sub(1, limit)
+end
 function A:Format(template, vars)
     local text = tostring(template or "")
     text = text:gsub("{([%a]+)}", function(key)
         local value = vars and vars[key]
         return value == nil and ("{" .. key .. "}") or tostring(value)
     end)
-    return text:sub(1, 250)
+    return self:ChatLimit(text)
+end
+-- Existing tests and optional stripped-down installs can still use the
+-- default formatter if the new language modules are not present.
+function A:CommsText(kind, vars)
+    if self.VoiceText then return self:VoiceText(kind, vars) end
+    return self:Format(self.db.templates[kind], vars)
 end
 function A:CanUse()
     return self.db and self.db.enabled and IsInGuild and IsInGuild()
@@ -110,7 +131,7 @@ end
 function A:SendGuild(message)
     if not self:CanUse() or type(message) ~= "string" or message == "" then return false end
     if not SendChatMessage then return false end
-    local ok, err = pcall(SendChatMessage, message:sub(1, 250), "GUILD")
+    local ok, err = pcall(SendChatMessage, self:ChatLimit(message), "GUILD")
     if not ok then self:Print("Couldn't send guild message: " .. tostring(err)) end
     return ok
 end
@@ -121,7 +142,7 @@ function A:QueueGuild(message, key, cooldown)
     if not self:CanUse() or type(message) ~= "string" or message == "" then return end
     if self:IsDuplicate(key, cooldown or 90) then return end
     local entry = {
-        text = message:sub(1, 250),
+        text = self:ChatLimit(message),
         kind = (type(key) == "string" and key:match("^([^:]+):")) or "message",
         guild = GetGuildInfo and GetGuildInfo("player") or nil,
         time = date and date("%H:%M") or "",
@@ -237,14 +258,66 @@ function A:SetOption(key, value)
     end
     return true
 end
+function A:VoiceOptionLabel(key, id)
+    if key == "language" then return (self.languageByID or {})[id] or tostring(id) end
+    if key == "accent" then
+        if id == "auto" then return "Auto (character race)" end
+        if id == "none" then return "None" end
+        return self.accents and self.accents[id] and self.accents[id].label or tostring(id)
+    end
+    if key == "accentStrength" then
+        return ({subtle="Subtle", moderate="Moderate", expressive="Expressive"})[id] or tostring(id)
+    end
+    return tostring(id)
+end
+function A:SetVoiceOption(key, value)
+    if not self.char or not self.char.voice or self.voiceDefaults[key] == nil then return false end
+    if key == "language" then
+        if not self.languageByID or not self.languageByID[value] then return false end
+    elseif key == "accent" then
+        if value ~= "auto" and value ~= "none" then
+            local valid = false
+            for _, entry in ipairs(self:GetAvailableAccents()) do
+                if entry.id == value then valid = true; break end
+            end
+            if not valid then return false end
+        end
+    elseif key == "accentStrength" then
+        if value ~= "subtle" and value ~= "moderate" and value ~= "expressive" then return false end
+    elseif key == "raceFilter" then
+        if type(value) ~= "boolean" then return false end
+    else return false end
+    self.char.voice[key] = value
+    -- An old selection may no longer be compatible with the new language or
+    -- the newly narrowed race filter. Revert to Auto instead of using it invisibly.
+    if key == "raceFilter" or key == "language" then
+        local valid = false
+        for _, entry in ipairs(self:GetAvailableAccents()) do
+            if entry.id == self.char.voice.accent then valid = true; break end
+        end
+        if not valid then self.char.voice.accent = "auto" end
+    end
+    self:RefreshOptions()
+    if self.UpdateRequestPreview then self:UpdateRequestPreview() end
+    if self.UpdateBroker then self:UpdateBroker() end
+    return true
+end
+function A:VoiceChoices(key)
+    if key == "language" then return self.languages or {{id="en", label="English"}} end
+    if key == "accent" then return self:GetAvailableAccents() end
+    if key == "accentStrength" then
+        return {{id="subtle", label="Subtle"}, {id="moderate", label="Moderate"}, {id="expressive", label="Expressive"}}
+    end
+    return {}
+end
 function A:OpenSettings(section)
     if self.settingsCategory and Settings and Settings.OpenToCategory then
         Settings.OpenToCategory(self.settingsCategory:GetID())
         -- Settings panels are displayed asynchronously; defer scrolling until
         -- the scroll child is available. Only an explicit menu shortcut uses it.
-        if section == "messages" and self.optionsScroll and self.messagesScrollY then
+        if (section == "messages" or section == "languages") and self.optionsScroll then
             local scroll = self.optionsScroll
-            local target = self.messagesScrollY
+            local target = section == "languages" and self.languagesScrollY or self.messagesScrollY
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
                     if scroll.SetVerticalScroll then scroll:SetVerticalScroll(target) end
@@ -278,6 +351,20 @@ function A:Initialize()
     end
     self.db = ForeverGuildCommsDB
     self.char = ForeverGuildCommsCharDB
+    self.char.voice = type(self.char.voice) == "table" and self.char.voice or {}
+    fillDefaults(self.char.voice, self.voiceDefaults)
+    if not self.languageByID or not self.languageByID[self.char.voice.language] then self.char.voice.language = "en" end
+    if self.char.voice.accentStrength ~= "subtle" and self.char.voice.accentStrength ~= "moderate" and self.char.voice.accentStrength ~= "expressive" then
+        self.char.voice.accentStrength = "subtle"
+    end
+    if type(self.char.voice.raceFilter) ~= "boolean" then self.char.voice.raceFilter = true end
+    if self.GetAvailableAccents then
+        local valid = false
+        for _, entry in ipairs(self:GetAvailableAccents()) do
+            if entry.id == self.char.voice.accent then valid = true; break end
+        end
+        if not valid then self.char.voice.accent = "auto" end
+    end
     self.char.recipes = self.char.recipes or {}
     self.char.myRoles = self.char.myRoles or {}
     self.char.needRoles = self.char.needRoles or {}

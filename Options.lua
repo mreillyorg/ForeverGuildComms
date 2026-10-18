@@ -27,7 +27,7 @@ function A:BuildOptions()
     scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -10)
     scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -28, 10)
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(540, 1050)
+    content:SetSize(540, 1460)
     scroll:SetScrollChild(content)
 
     local controls = {}
@@ -58,6 +58,40 @@ function A:BuildOptions()
             MakeLabel(content, description, 47, y+1, 482, "GameFontHighlightSmall")
             y = y - 24
         end
+    end
+    local function voiceToggle(key, title)
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetSize(25, 25)
+        cb:SetPoint("TOPLEFT", 17, y)
+        cb:SetChecked(A.char.voice[key] == true)
+        cb:SetScript("OnClick", function(self) A:SetVoiceOption(key, self:GetChecked() == true) end)
+        MakeLabel(content, title, 47, y-4, 480, "GameFontHighlight")
+        controls[#controls+1] = function() cb:SetChecked(A.char.voice[key] == true) end
+        y = y - 28
+    end
+    local function voiceCycle(key, title)
+        MakeLabel(content, title, 19, y, 500, "GameFontHighlight")
+        y = y - 26
+        local btn = MakeButton(content, "", 29, y, 355, function()
+            local choices = A:VoiceChoices(key)
+            local current = A.char.voice[key]
+            local nextChoice = choices[1]
+            for i, choice in ipairs(choices) do
+                if choice.id == current then
+                    nextChoice = choices[i % #choices + 1]
+                    break
+                end
+            end
+            if nextChoice then A:SetVoiceOption(key, nextChoice.id) end
+        end)
+        MakeButton(content, "Use default", 407, y, 105, function()
+            A:SetVoiceOption(key, A.voiceDefaults[key])
+        end)
+        controls[#controls+1] = function()
+            btn:SetText(A:VoiceOptionLabel(key, A.char.voice[key]) .. "  >")
+        end
+        btn:SetText(A:VoiceOptionLabel(key, A.char.voice[key]) .. "  >")
+        y = y - 37
     end
     local function timingOption(key, title, description)
         local limits = A.timingLimits[key]
@@ -176,6 +210,25 @@ function A:BuildOptions()
     section("Guild tabard")
     toggle("tabardInCity", "Remind me to wear my guild tabard in capital cities", "Supports classic Guild Tabard (item 5976); never equips automatically.")
     toggle("tabardOnExit", "Ask about removing the tabard when leaving a city", "Optional; opens the character equipment page for manual removal.")
+    -- Language and accent choices live in per-character SavedVariables.
+    self.languagesScrollY = math.max(0, -y - 25)
+    section("Languages & accents (this character)")
+    MakeLabel(content, "Only built-in addon messages. Edited custom templates keep their own wording.",
+        19, y, 505, "GameFontHighlightSmall")
+    y = y - 25
+    voiceCycle("language", "Outgoing message language")
+    voiceToggle("raceFilter", "Show only accents suggested for my race (" .. A:GetPlayerRace() .. ")")
+    voiceCycle("accent", "Accent or RP speaking style")
+    voiceCycle("accentStrength", "Accent strength (Expressive adds more flavour)")
+    MakeLabel(content, "None = neutral wording. Auto = default for your race, where supported.",
+        19, y, 500, "GameFontHighlightSmall")
+    y = y - 33
+    local voicePreview = MakeLabel(content, "", 19, y, 495, "GameFontHighlightSmall")
+    controls[#controls+1] = function()
+        voicePreview:SetText("Preview: " .. A:CommsText("login", {name="Adventurer", level=30}))
+    end
+    controls[#controls]()
+    y = y - 48
     -- Mark the scroll position so Titan's shortcut can open the editor here.
     self.messagesScrollY = math.max(0, -y - 25)
     section("Custom messages")
@@ -199,7 +252,7 @@ function A:BuildOptions()
     y = y - 25
     MakeLabel(content, "Automatic messages are rate-limited; verified messages only send when you click Send.",
         18, y, 500, "GameFontHighlightSmall")
-    content:SetHeight(math.max(1200, -y+40))
+    content:SetHeight(math.max(1460, -y+80))
     function panel.OnRefresh()
         for _, fn in ipairs(controls) do fn() end
     end
@@ -219,7 +272,9 @@ function A:BuildOptions()
                 for sub, v in pairs(value) do A.db[k][sub] = v end
             else A.db[k] = value end
         end
+        for key, value in pairs(A.voiceDefaults) do A.char.voice[key] = value end
         panel.OnRefresh()
+        if A.UpdateRequestPreview then A:UpdateRequestPreview() end
         if A.UpdateBroker then A:UpdateBroker() end
         if A.UpdateRequestPreview then A:UpdateRequestPreview() end
     end

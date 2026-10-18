@@ -65,6 +65,36 @@ function A:PopulateTitanMenu(root)
     AddSetting(requests, "groupAlerts", "Alert on LFG / LFM / LF requests")
     AddSetting(requests, "alertsSound", "Play private alert sound")
 
+    local voice = root:CreateButton("Languages & accents (this character)")
+    voice:CreateTitle("Built-in outgoing messages only")
+    local language = voice:CreateButton("Language: " .. self:VoiceOptionLabel("language", self.char.voice.language))
+    for _, entry in ipairs(self:VoiceChoices("language")) do
+        local id = entry.id
+        language:CreateRadio(entry.label,
+            function() return A.char.voice.language == id end,
+            function() A:SetVoiceOption("language", id) end)
+    end
+    local currentAccent = self:VoiceOptionLabel("accent", self.char.voice.accent)
+    local accents = voice:CreateButton("Accent: " .. currentAccent)
+    for _, entry in ipairs(self:VoiceChoices("accent")) do
+        local id = entry.id
+        accents:CreateRadio(entry.label,
+            function() return A.char.voice.accent == id end,
+            function() A:SetVoiceOption("accent", id) end)
+    end
+    voice:CreateCheckbox("Filter accents to my race (" .. self:GetPlayerRace() .. ")",
+        function() return A.char.voice.raceFilter == true end,
+        function() A:SetVoiceOption("raceFilter", not A.char.voice.raceFilter) end)
+    local strength = voice:CreateButton("Accent strength: " .. self:VoiceOptionLabel("accentStrength", self.char.voice.accentStrength))
+    for _, entry in ipairs(self:VoiceChoices("accentStrength")) do
+        local id = entry.id
+        strength:CreateRadio(entry.label,
+            function() return A.char.voice.accentStrength == id end,
+            function() A:SetVoiceOption("accentStrength", id) end)
+    end
+    voice:CreateDivider()
+    voice:CreateButton("More language options in Settings...", function() A:OpenSettings("languages") end)
+
     local tabard = root:CreateButton("Guild tabard")
     AddSetting(tabard, "tabardInCity", "Remind me to wear tabard in cities")
     AddSetting(tabard, "tabardOnExit", "Ask to remove tabard when leaving")
