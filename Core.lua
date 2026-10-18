@@ -1,7 +1,7 @@
 local ADDON, A = ...
 _G.ForeverGuildComms = A
 A.name = ADDON
-A.version = "0.2.0-beta"
+A.version = "0.3.0-beta"
 A.defaults = {
     enabled = true,
     outgoingMode = "automatic", -- "automatic" or "verify" for roster-triggered messages
@@ -30,7 +30,21 @@ A.classRoles = {
 }
 A.roleNames = {tank="Tank", healer="Healer", damage="DPS"}
 A.roleOrder = {"tank", "healer", "damage"}
-A.lastMessages = {}
+-- Both timing options are saved as whole seconds. Clamp values coming from
+-- older SavedVariables as well as from the Settings edit boxes.
+A.timingLimits = {
+    messageSpacing = {min=3, max=120},
+    loginCooldown = {min=0, max=3600},
+}
+function A:NormalizeTiming(key, value, fallback)
+    local limits = self.timingLimits[key]
+    if not limits then return nil end
+    local n = tonumber(value)
+    if not n or n ~= n or n == math.huge or n == -math.huge then
+        n = fallback == nil and self.defaults[key] or fallback
+    end
+    return math.max(limits.min, math.min(limits.max, math.floor(n + 0.5)))
+end
 A.eventsSeen = {}
 A.alerts = {}
 A.onlineCount = 0
@@ -191,9 +205,52 @@ function A:RoleText(roles, noneText)
     end
     return #labels > 0 and table.concat(labels, "/") or (noneText or "Any")
 end
-function A:OpenSettings()
+-- One settings writer shared by Blizzard Settings and the Titan menu.
+-- Updating via this method keeps visible controls in sync and ensures timing
+-- values always obey the same limits regardless of the UI used to edit them.
+function A:RefreshOptions()
+    if self.optionsPanel and self.optionsPanel.OnRefresh then
+        self.optionsPanel.OnRefresh()
+    end
+end
+function A:SetOption(key, value)
+    if not self.db or self.defaults[key] == nil then return false end
+    if key == "outgoingMode" then
+        if value ~= "automatic" and value ~= "verify" then return false end
+    elseif self.timingLimits[key] then
+        value = self:NormalizeTiming(key, value, self.db[key])
+    elseif type(self.defaults[key]) == "boolean" then
+        if type(value) ~= "boolean" then return false end
+    else
+        -- Templates are edited in Blizzard Settings only, not Titan's menu.
+        return false
+    end
+    local changed = self.db[key] ~= value
+    self.db[key] = value
+    if changed and key == "outgoingMode" and value == "automatic"
+        and #self.pendingApprovals > 0 then
+        self:Print("Earlier pending messages still need approval or dismissal. /fgc verify")
+    end
+    if changed then
+        self:RefreshOptions()
+        if self.UpdateBroker then self:UpdateBroker() end
+    end
+    return true
+end
+function A:OpenSettings(section)
     if self.settingsCategory and Settings and Settings.OpenToCategory then
         Settings.OpenToCategory(self.settingsCategory:GetID())
+        -- Settings panels are displayed asynchronously; defer scrolling until
+        -- the scroll child is available. Only an explicit menu shortcut uses it.
+        if section == "messages" and self.optionsScroll and self.messagesScrollY then
+            local scroll = self.optionsScroll
+            local target = self.messagesScrollY
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, function()
+                    if scroll.SetVerticalScroll then scroll:SetVerticalScroll(target) end
+                end)
+            end
+        end
     else
         self:Print("Settings page is not available yet. Try /reload.")
     end
@@ -214,6 +271,10 @@ function A:Initialize()
            or ForeverGuildCommsDB.templates[key]:match("^%s*$") then
             ForeverGuildCommsDB.templates[key] = defaultMessage
         end
+    end
+    -- Migrate old profiles (including edited SavedVariables) to safe values.
+    for key in pairs(self.timingLimits) do
+        ForeverGuildCommsDB[key] = self:NormalizeTiming(key, ForeverGuildCommsDB[key])
     end
     self.db = ForeverGuildCommsDB
     self.char = ForeverGuildCommsCharDB

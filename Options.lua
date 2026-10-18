@@ -32,6 +32,7 @@ function A:BuildOptions()
 
     local controls = {}
     local edits = {}
+    local numericEdits = {}
     MakeLabel(content, "Forever Guild Comms", 16, -10, 500, "GameFontNormalLarge")
     MakeLabel(content, "Choose automatic greetings or review each before sending. Guild alerts remain private.",
         16, -39, 510, "GameFontHighlightSmall")
@@ -45,7 +46,7 @@ function A:BuildOptions()
         cb:SetSize(25, 25)
         cb:SetPoint("TOPLEFT", 17, y)
         cb:SetChecked(A.db[key] and true or false)
-        cb:SetScript("OnClick", function(self) A.db[key] = self:GetChecked() end)
+        cb:SetScript("OnClick", function(self) A:SetOption(key, self:GetChecked() and true or false) end)
         controls[#controls+1] = function() cb:SetChecked(A.db[key] and true or false) end
         MakeLabel(content, title, 47, y-4, 480, "GameFontHighlight")
         y = y - 26
@@ -53,6 +54,47 @@ function A:BuildOptions()
             MakeLabel(content, description, 47, y+1, 482, "GameFontHighlightSmall")
             y = y - 24
         end
+    end
+    local function timingOption(key, title, description)
+        local limits = A.timingLimits[key]
+        MakeLabel(content, title, 19, y, 495, "GameFontHighlight")
+        y = y - 26
+        local eb = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+        eb:SetPoint("TOPLEFT", 29, y)
+        eb:SetSize(95, 25)
+        eb:SetAutoFocus(false)
+        eb:SetNumeric(true)
+        eb:SetMaxLetters(5)
+        eb:SetText(tostring(A.db[key]))
+        local function apply()
+            local raw = eb:GetText()
+            -- Empty or malformed input keeps the current saved number.
+            A:SetOption(key, raw)
+            eb:SetText(tostring(A.db[key]))
+        end
+        eb:SetScript("OnEditFocusLost", apply)
+        eb:SetScript("OnEnterPressed", function(self)
+            apply()
+            self:ClearFocus()
+        end)
+        eb:SetScript("OnEscapePressed", function(self)
+            self:SetText(tostring(A.db[key]))
+            self:ClearFocus()
+        end)
+        MakeLabel(content, "seconds", 140, y-4, 100, "GameFontHighlightSmall")
+        MakeButton(content, "Use default", 407, y, 105, function()
+            A:SetOption(key, A.defaults[key])
+            eb:SetText(tostring(A.db[key]))
+            eb:ClearFocus()
+        end)
+        numericEdits[#numericEdits+1] = apply
+        controls[#controls+1] = function()
+            if not eb:HasFocus() then eb:SetText(tostring(A.db[key])) end
+        end
+        y = y - 30
+        MakeLabel(content, description .. " (" .. limits.min .. "–" .. limits.max .. " seconds; default: " .. A.defaults[key] .. ")",
+            29, y, 490, "GameFontHighlightSmall")
+        y = y - 30
     end
     local function outgoingMode()
         MakeLabel(content, "Guild greetings and congratulations:", 19, y, 495, "GameFontHighlight")
@@ -65,13 +107,7 @@ function A:BuildOptions()
             cb:SetPoint("TOPLEFT", 22+(i-1)*210, y)
             MakeLabel(content, choice.title, 53+(i-1)*210, y-3, 195, "GameFontHighlight")
             cb:SetScript("OnClick", function()
-                A.db.outgoingMode = choice.key
-                for _, entry in ipairs(radios) do
-                    entry.button:SetChecked(entry.key == A.db.outgoingMode)
-                end
-                if A.db.outgoingMode == "automatic" and #A.pendingApprovals > 0 then
-                    A:Print("Earlier pending messages still need approval or dismissal. /fgc verify")
-                end
+                A:SetOption("outgoingMode", choice.key)
             end)
             radios[#radios+1] = {button=cb, key=choice.key}
         end
@@ -127,6 +163,8 @@ function A:BuildOptions()
     toggle("greetLogin", "Greet guild members when they log in", "Only offline -> online changes after the initial guild roster snapshot.")
     toggle("greetJoin", "Welcome newly joined guild members", "Uses the localized guild-join system message; duplicate protected.")
     toggle("congratulateLevel", "Congratulate guild members on leveling", "Only online-to-online level changes. Your character is ALWAYS excluded.")
+    timingOption("messageSpacing", "Automatic message spacing", "Minimum gap between automatic guild messages")
+    timingOption("loginCooldown", "Login greeting cooldown", "Wait before greeting the same guildmate again; 0 disables the cooldown")
     section("Private guild requests")
     toggle("craftingAlerts", "Alert when a guildmate needs an item I can craft", "Open each profession to cache known recipes; exact item-name matching.")
     toggle("groupAlerts", "Alert on LFG / LFM / LF group requests", "Reads guild chat only. Use the Alerts window to whisper manually.")
@@ -134,6 +172,8 @@ function A:BuildOptions()
     section("Guild tabard")
     toggle("tabardInCity", "Remind me to wear my guild tabard in capital cities", "Supports classic Guild Tabard (item 5976); never equips automatically.")
     toggle("tabardOnExit", "Ask about removing the tabard when leaving a city", "Optional; opens the character equipment page for manual removal.")
+    -- Mark the scroll position so Titan's shortcut can open the editor here.
+    self.messagesScrollY = math.max(0, -y - 25)
     section("Custom messages")
     MakeLabel(content, "Variables: {name}, {level}, {type}, {activity}, {myroles}, {needed}",
         18, y, 510, "GameFontHighlightSmall")
@@ -160,6 +200,7 @@ function A:BuildOptions()
         for _, fn in ipairs(controls) do fn() end
     end
     function panel.OnCommit()
+        for _, apply in ipairs(numericEdits) do apply() end
         for key, edit in pairs(edits) do
             A.db.templates[key] = edit:GetText()
             edit:ClearFocus()
@@ -175,8 +216,11 @@ function A:BuildOptions()
             else A.db[k] = value end
         end
         panel.OnRefresh()
+        if A.UpdateBroker then A:UpdateBroker() end
         if A.UpdateRequestPreview then A:UpdateRequestPreview() end
     end
+    self.optionsPanel = panel
+    self.optionsScroll = scroll
     local category = Settings.RegisterCanvasLayoutCategory(panel, "Forever Guild Comms")
     Settings.RegisterAddOnCategory(category)
     self.settingsCategory = category

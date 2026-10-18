@@ -10,8 +10,8 @@ function A:TryBroker()
         text = "Guild Comms",
         label = "Guild Comms",
         icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01",
-        OnClick = function(_, button)
-            if button == "RightButton" then A:OpenSettings()
+        OnClick = function(frame, button)
+            if button == "RightButton" then A:OpenTitanMenu(frame)
             elseif IsShiftKeyDown() then A:ShowRequest()
             elseif #A.pendingApprovals > 0 then A:ShowApprovals()
             else A:ShowAlerts() end
@@ -24,7 +24,7 @@ function A:TryBroker()
             tooltip:AddLine("Outgoing mode: " .. (A.db and A.db.outgoingMode or "automatic"), 1, 1, 1)
             tooltip:AddLine("Left-click: review messages (when pending), else alerts", 0.7, 0.8, 1)
             tooltip:AddLine("Shift + left-click: request help", 0.7, 0.8, 1)
-            tooltip:AddLine("Right-click: settings", 0.7, 0.8, 1)
+            tooltip:AddLine("Right-click: nested options + quick actions", 0.7, 0.8, 1)
         end,
     })
     self:UpdateBroker()
