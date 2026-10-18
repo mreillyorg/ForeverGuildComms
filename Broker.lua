@@ -9,7 +9,7 @@ function A:TryBroker()
         type = "data source",
         text = "Guild Comms",
         label = "Guild Comms",
-        icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01",
+        icon = "Interface\\AddOns\\ForeverGuildComms\\Media\\Icon",
         OnClick = function(frame, button)
             if button == "RightButton" then A:OpenTitanMenu(frame)
             elseif IsShiftKeyDown() then A:ShowRequest()

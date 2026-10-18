@@ -33,9 +33,13 @@ function A:BuildOptions()
     local controls = {}
     local edits = {}
     local numericEdits = {}
-    MakeLabel(content, "Forever Guild Comms", 16, -10, 500, "GameFontNormalLarge")
+    local addonIcon = content:CreateTexture(nil, "ARTWORK")
+    addonIcon:SetSize(48, 48)
+    addonIcon:SetPoint("TOPLEFT", content, "TOPLEFT", 16, -10)
+    addonIcon:SetTexture("Interface\\AddOns\\ForeverGuildComms\\Media\\Icon")
+    MakeLabel(content, "Forever Guild Comms", 75, -10, 430, "GameFontNormalLarge")
     MakeLabel(content, "Choose automatic greetings or review each before sending. Guild alerts remain private.",
-        16, -39, 510, "GameFontHighlightSmall")
+        75, -39, 445, "GameFontHighlightSmall")
     local y = -77
     local function section(text)
         MakeLabel(content, text, 16, y, 510, "GameFontNormal")

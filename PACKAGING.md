@@ -24,6 +24,9 @@ to your GitHub repository root. For example, this must exist:
   Options.lua
   TitanMenu.lua
   Broker.lua
+  Media/
+    Icon.tga
+    ProjectIcon.png
   README.md
   PACKAGING.md
   install/
@@ -80,8 +83,8 @@ been created or configured by this ZIP.
   Windows files under `install/`, tests, `.pkgmeta`, the GitHub workflow,
   and the addon. Run `install/Install-ForeverGuildComms.cmd` after extraction.
 - **Packager ZIP (from GitHub Actions):** Contains the `.toc`, its loadable
-  Lua files and `README.md`. `.pkgmeta` excludes `install/`, `tests/`,
-  `PACKAGING.md` and the GitHub workflow; hidden config files are skipped
+  Lua files, in-game icon `Media/Icon.tga` and `README.md`. `.pkgmeta` excludes `install/`, `tests/`,
+  `PACKAGING.md`, promotional icon PNG and the GitHub workflow; hidden config files are skipped
   automatically. This clean ZIP is for normal addon-manager installation.
 
 The in-game addon does not need BigWigs or TitanPanel to be present for packaging.
@@ -100,3 +103,7 @@ bash /path/to/packager/release.sh -d
 Use a real Git checkout, not an extracted ZIP, because release.sh reads Git
 tags and history for versioning. See the packager's own README for platform
 requirements.
+
+## Project icon
+
+Upload `Media/ProjectIcon.png` (512 × 512 pixels) as the CurseForge/Wago/GitHub project artwork where supported. `Media/Icon.tga` is the runtime texture; the packager includes it in addon ZIPs. The promotional PNG is excluded by `.pkgmeta`.

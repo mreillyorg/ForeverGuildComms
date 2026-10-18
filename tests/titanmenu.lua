@@ -19,6 +19,7 @@ mt = {__index=function(_, name)
     if name == "GetChecked" then return function(self) return self.checked end end
     if name == "HasFocus" then return function() return false end end
     if name == "CreateFontString" then return function() return setmetatable({}, mt) end end
+    if name == "CreateTexture" then return function() return setmetatable({}, mt) end end
     if name == "SetScript" then return function(self, action, func) self[action]=func end end
     if name == "SetText" then return function(self, value) self.text=value end end
     if name == "SetChecked" then return function(self, value) self.checked=value end end

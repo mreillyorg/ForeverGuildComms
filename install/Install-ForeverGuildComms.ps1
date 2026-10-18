@@ -1,6 +1,6 @@
 # ForeverGuildComms integrated installer for Windows PowerShell 5.1+
 # Place this script in the ForeverGuildComms\install folder (as packaged in the ZIP).
-# Installs only the TOC and the .lua/.xml files listed inside it.
+# Installs the TOC, its .lua/.xml files, and the required in-game icon texture.
 # Existing SavedVariables, unrelated files and addon directories are never modified.
 # Usage (after Extract All):
 #   Double-click ForeverGuildComms\install\Install-ForeverGuildComms.cmd (recommended).
@@ -166,6 +166,12 @@ function Get-InstallManifest {
         $files.Add($line)
     }
     if ($files.Count -lt 2) { throw 'The addon TOC contains no loadable files.' }
+    # The texture is loaded by path at runtime; it is not listed as a TOC script.
+    $iconFile = 'Media\Icon.tga'
+    if (-not (Test-Path -LiteralPath (Join-Path -Path $SourceDir -ChildPath $iconFile) -PathType Leaf)) {
+        throw "Addon source is missing the required icon texture: $iconFile"
+    }
+    $files.Add($iconFile)
     return $files.ToArray()
 }
 
@@ -191,15 +197,17 @@ try {
     $targetAddon = Join-Path -Path $targetAddOns -ChildPath $addonName
     Write-Step "Source: $addonSource"
     Write-Step "Destination: $targetAddon"
-    Write-Step "Loading $($fileNames.Count) addon files from the TOC."
+    Write-Step "Loading $($fileNames.Count) required addon files and textures."
 
     # Stage all needed files before touching the destination, allowing the
     # source folder to be the existing installed addon directory if desired.
     $stagingRoot = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ('FGC-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $stagingRoot -ErrorAction Stop | Out-Null
     foreach ($file in $fileNames) {
+        $stageFile = Join-Path -Path $stagingRoot -ChildPath $file
+        New-Item -ItemType Directory -Path (Split-Path -Path $stageFile -Parent) -Force -ErrorAction Stop | Out-Null
         Copy-Item -LiteralPath (Join-Path -Path $addonSource -ChildPath $file) `
-            -Destination (Join-Path -Path $stagingRoot -ChildPath $file) -ErrorAction Stop
+            -Destination $stageFile -ErrorAction Stop
     }
 
     $toCopy = @()
@@ -229,8 +237,10 @@ try {
             $backup = Join-Path -Path $backupRoot -ChildPath $backupName
             New-Item -ItemType Directory -Path $backup -Force -ErrorAction Stop | Out-Null
             foreach ($file in $previousFiles.Keys) {
+                $backupFile = Join-Path -Path $backup -ChildPath $file
+                New-Item -ItemType Directory -Path (Split-Path -Path $backupFile -Parent) -Force -ErrorAction Stop | Out-Null
                 Copy-Item -LiteralPath (Join-Path -Path $targetAddon -ChildPath $file) `
-                    -Destination (Join-Path -Path $backup -ChildPath $file) -ErrorAction Stop
+                    -Destination $backupFile -ErrorAction Stop
             }
             Write-Step "Backed up replaced files to: $backup"
         }
@@ -242,6 +252,7 @@ try {
                 $attempted += $file
                 $from = Join-Path -Path $stagingRoot -ChildPath $file
                 $to = Join-Path -Path $targetAddon -ChildPath $file
+                New-Item -ItemType Directory -Path (Split-Path -Path $to -Parent) -Force -ErrorAction Stop | Out-Null
                 Copy-Item -LiteralPath $from -Destination $to -Force -ErrorAction Stop
                 if (-not (Test-SameContents -First $from -Second $to)) {
                     throw "Verification failed after copying $file"

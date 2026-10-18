@@ -1,0 +1,13 @@
+# BigWigsMods/packager configuration. Place this file at the GitHub repository root,
+# next to ForeverGuildComms.toc (not inside a second ForeverGuildComms folder).
+package-as: ForeverGuildComms
+
+# The BigWigs release archive is suitable for addon managers and contains only
+# runtime files and the general README. Our manual-download ZIP still includes
+# install/ and tests/ for the integrated Windows installer and local testing.
+ignore:
+  - install
+  - tests
+  - PACKAGING.md
+  - .github
+  - Media/ProjectIcon.png

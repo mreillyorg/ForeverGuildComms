@@ -26,6 +26,7 @@ mt = {__index=function(tbl, method)
     if method == 'SetScript' then return function(self, event, cb) self[event]=cb end end
     if method == 'HasFocus' then return function() return false end end
     if method == 'CreateFontString' then return function() return setmetatable({}, mt) end end
+    if method == 'CreateTexture' then return function() return setmetatable({}, mt) end end
     return noop
 end}
 _G.CreateFrame=function(kind, name, parent, template)

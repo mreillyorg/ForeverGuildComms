@@ -2,6 +2,7 @@
 ## Title: Forever Guild Comms
 ## Notes: Welcomes, guild greetings, levels, crafting and LFG alerts, tabard reminders, and group requests.
 ## Author: Michael Reilly
+## IconTexture: Interface\AddOns\ForeverGuildComms\Media\Icon
 ## Version: 0.3.0-beta
 ## SavedVariables: ForeverGuildCommsDB
 ## SavedVariablesPerCharacter: ForeverGuildCommsCharDB

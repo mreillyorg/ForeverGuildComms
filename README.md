@@ -10,7 +10,7 @@ WoW: Forever 1.60.1 / Interface 16001 addon by Michael Reilly.
 4. Restart WoW Forever or enter `/reload`, then open **Settings > AddOns > Forever Guild Comms** (or `/fgc options`).
 5. If Titan Panel is installed, enable the **Guild Comms** Data Broker plugin.
 
-The integrated installer reads `ForeverGuildComms.toc` and copies **only the `.toc` and loadable Lua/XML files**. Files that are already identical are skipped. It never copies the README, tests, or `install` directory into the AddOns folder, and it does not replace your entire addon directory. Before overwriting addon files, it backs up those specific previous files to `Interface\AddOnBackups`. It leaves all character settings and SavedVariables untouched.
+The integrated installer reads `ForeverGuildComms.toc` and copies **only the `.toc`, loadable Lua/XML files and `Media/Icon.tga`**. Files that are already identical are skipped. It never copies the README, tests, or `install` directory into the AddOns folder, and it does not replace your entire addon directory. Before overwriting addon files, it backs up those specific previous files to `Interface\AddOnBackups`. It leaves all character settings and SavedVariables untouched.
 
 **Manual installation:** Copy the `ForeverGuildComms` subfolder from the extracted archive into `World of Warcraft\_classic_beta_\Interface\AddOns\`. The required folder is `AddOns\ForeverGuildComms\ForeverGuildComms.toc`. Manual copying also copies the included documentation, tests and `install` folder unless you omit them yourself; neither is loaded by WoW.
 
@@ -20,7 +20,7 @@ This source archive now contains `.pkgmeta` and `.github/workflows/package.yml`
 for automatic packaging from GitHub tags. The BigWigs packager recognises
 Forever (`## Interface: 16001`) without manually overriding the game type.
 For CurseForge-style distribution, its release ZIP excludes `install/`,
-`tests/` and other repository-only files. **This manual ZIP still includes
+`tests/`, the promotional `Media/ProjectIcon.png` and other repository-only files, while retaining the in-game `Media/Icon.tga`. **This manual ZIP still includes
 the integrated Windows installer.**
 
 To set up your own GitHub repository and publish releases, follow
@@ -28,6 +28,10 @@ To set up your own GitHub repository and publish releases, follow
 extracted addon's **contents** as the repository root; it does not publish
 until you push an annotated version tag. No publishing accounts or project
 IDs are configured automatically.
+
+## Addon icon
+
+The addon now has a custom blue-and-gold guild communications emblem. The in-game texture `Media/Icon.tga` is used by the **TitanPanel Data Broker icon**, **Settings header** and **AddOns list** (on clients supporting `IconTexture` metadata). The separate 512 × 512 PNG `Media/ProjectIcon.png` is included for GitHub, CurseForge or other project pages; it is not required by WoW and is intentionally excluded from BigWigs release ZIPs. The integrated Windows installer copies the `.tga` texture, but not the promotional `.png`.
 
 ## Features
 
