@@ -1,0 +1,21 @@
+# Line-ending policy for Forever Guild Comms
+#
+# Store every text file as LF in the repository AND check it out as LF, so the
+# working tree is identical on every machine regardless of each contributor's
+# core.autocrlf setting. Without this, a Windows clone with the common
+# core.autocrlf=true converts the sources to CRLF on checkout, which git then
+# reports as "LF will be replaced by CRLF the next time Git touches it".
+#
+# LF is already what the shipped sources use, and the WoW client's Lua
+# interpreter reads either ending, so pinning LF changes nothing at runtime and
+# removes the churn.
+* text=auto eol=lf
+
+# Spelled out for the files that actually make up the addon, so the intent
+# survives if the wildcard above is ever narrowed.
+*.lua          text eol=lf
+*.toc          text eol=lf
+*.md           text eol=lf
+LICENSE        text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf

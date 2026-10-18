@@ -33,7 +33,7 @@ function A:BuildOptions()
     local controls = {}
     local edits = {}
     MakeLabel(content, "Forever Guild Comms", 16, -10, 500, "GameFontNormalLarge")
-    MakeLabel(content, "Guild chat messages are automatic; crafting/LFG alerts are private.",
+    MakeLabel(content, "Choose automatic greetings or review each before sending. Guild alerts remain private.",
         16, -39, 510, "GameFontHighlightSmall")
     local y = -77
     local function section(text)
@@ -54,15 +54,47 @@ function A:BuildOptions()
             y = y - 24
         end
     end
+    local function outgoingMode()
+        MakeLabel(content, "Guild greetings and congratulations:", 19, y, 495, "GameFontHighlight")
+        y = y - 27
+        local radios = {}
+        for i, choice in ipairs({{key="automatic", title="Automatic"},
+                {key="verify", title="Verify with a click"}}) do
+            local cb = CreateFrame("CheckButton", nil, content, "UIRadioButtonTemplate")
+            cb:SetSize(24, 24)
+            cb:SetPoint("TOPLEFT", 22+(i-1)*210, y)
+            MakeLabel(content, choice.title, 53+(i-1)*210, y-3, 195, "GameFontHighlight")
+            cb:SetScript("OnClick", function()
+                A.db.outgoingMode = choice.key
+                for _, entry in ipairs(radios) do
+                    entry.button:SetChecked(entry.key == A.db.outgoingMode)
+                end
+                if A.db.outgoingMode == "automatic" and #A.pendingApprovals > 0 then
+                    A:Print("Earlier pending messages still need approval or dismissal. /fgc verify")
+                end
+            end)
+            radios[#radios+1] = {button=cb, key=choice.key}
+        end
+        controls[#controls+1] = function()
+            for _, entry in ipairs(radios) do
+                entry.button:SetChecked(entry.key == A.db.outgoingMode)
+            end
+        end
+        controls[#controls]()
+        y = y - 30
+        MakeLabel(content, "Automatic posts to guild chat. Verify opens a private review window with Send and Dismiss buttons.",
+            46, y, 485, "GameFontHighlightSmall")
+        y = y - 42
+    end
     local function template(key, title, hint)
         MakeLabel(content, title, 19, y, 500, "GameFontHighlight")
         y = y - 25
         local eb = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
         eb:SetPoint("TOPLEFT", 29, y)
-        eb:SetSize(477, 25)
+        eb:SetSize(363, 25)
         eb:SetAutoFocus(false)
         eb:SetMaxLetters(250)
-        eb:SetText(A.db.templates[key])
+        eb:SetText(A.db.templates[key] or A.defaults.templates[key])
         eb:SetScript("OnEditFocusLost", function(self)
             A.db.templates[key] = self:GetText()
             if A.UpdateRequestPreview then A:UpdateRequestPreview() end
@@ -72,17 +104,26 @@ function A:BuildOptions()
             self:SetText(A.db.templates[key])
             self:ClearFocus()
         end)
+        MakeButton(content, "Use default", 407, y, 105, function()
+            A.db.templates[key] = A.defaults.templates[key]
+            eb:SetText(A.defaults.templates[key])
+            eb:ClearFocus()
+            if A.UpdateRequestPreview then A:UpdateRequestPreview() end
+        end)
         edits[key] = eb
         controls[#controls+1] = function()
             if not eb:HasFocus() then eb:SetText(A.db.templates[key]) end
         end
-        y = y - 29
+        y = y - 32
+        MakeLabel(content, "Default: " .. A.defaults.templates[key], 29, y, 490, "GameFontHighlightSmall")
+        y = y - (key == "help" and 37 or 25)
         MakeLabel(content, hint, 29, y, 494, "GameFontHighlightSmall")
-        y = y - 27
+        y = y - 30
     end
     section("General")
     toggle("enabled", "Enable addon", "Disabling stops guild chat messages and private monitoring.")
-    section("Automatic guild messages")
+    section("Outgoing guild messages")
+    outgoingMode()
     toggle("greetLogin", "Greet guild members when they log in", "Only offline -> online changes after the initial guild roster snapshot.")
     toggle("greetJoin", "Welcome newly joined guild members", "Uses the localized guild-join system message; duplicate protected.")
     toggle("congratulateLevel", "Congratulate guild members on leveling", "Only online-to-online level changes. Your character is ALWAYS excluded.")
@@ -112,9 +153,9 @@ function A:BuildOptions()
     MakeLabel(content, "Role selection (Tank / Healer / DPS) is in the Ask for Help window.",
         18, y, 500, "GameFontHighlightSmall")
     y = y - 25
-    MakeLabel(content, "Automatic messages are queued at least 6 seconds apart.",
+    MakeLabel(content, "Automatic messages are rate-limited; verified messages only send when you click Send.",
         18, y, 500, "GameFontHighlightSmall")
-    content:SetHeight(math.max(950, -y+40))
+    content:SetHeight(math.max(1200, -y+40))
     function panel.OnRefresh()
         for _, fn in ipairs(controls) do fn() end
     end

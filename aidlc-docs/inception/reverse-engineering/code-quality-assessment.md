@@ -1,273 +1,359 @@
 # Code Quality Assessment
 
+**Analysis target**: Forever Guild Comms **0.2.0-beta**
+**Supersedes**: the 0.1.0-beta pass of 2026-10-18
+
 ## Summary
 
-The codebase is small (882 shipped Lua lines), internally consistent, and unusually
-disciplined about its own failure modes. Its stated risk model — that a duplicate or
-misdirected guild message is worse than a missed greeting — is visibly enforced in code
-through a single send path, layered guards, and deliberate lossiness. The documentation
-is honest about what has not been verified.
+0.2.0 is a quality-positive release. The headline feature — an opt-in review step before
+any roster-driven message reaches guild chat — directly strengthens the product's primary
+safety property, and it arrived with tests rather than after them. Three of the eleven
+recommendations from the 0.1.0 assessment are now resolved, including the most important
+one: the send pipeline is no longer stubbed out of its own tests.
 
-The weak points are all in verification coverage rather than design: four of seven
-modules have no automated test path, the send queue itself is stubbed out of the one test
-file, and there is no CI. There is also a small amount of unreachable configuration and
-one latent ordering issue in the tabard feature.
+Test code grew from 72 lines to 207 against 1,097 lines of shipped source, taking test
+coverage from 8% to 19% by line count. More significantly, `tests/verify.lua` exercises
+the *real* `QueueGuild`, `DrainQueue`, `StageApproval`, and `ApproveMessage`, and
+`tests/settings.lua` proves that the Options panel is testable offline — something the
+project's own notes had declared impossible.
+
+The remaining concerns are mostly carried forward from 0.1.0 and unchanged. The one new
+finding of substance is that `OnDefault` silently resets the outgoing mode without the
+warning its sibling control prints.
+
+## Status of the 0.1.0 Findings
+
+| # | 0.1.0 finding | Status in 0.2.0 |
+| --- | --- | --- |
+| 1 | Send queue (`QueueGuild`, `DrainQueue`, `IsDuplicate`, `SendGuild`) had no automated coverage | **Largely resolved.** `tests/verify.lua` drives all four through the real code path |
+| 2 | `IsDuplicate` untested | **Resolved.** Asserted directly: a repeated `login:alice` does not enqueue twice |
+| 3 | `IsSelf` realm handling untested | **Open, unchanged** |
+| 4 | Suspicious-roster-read guard untested | **Open, unchanged** |
+| 5 | Guild-change path untested | **Resolved for the approval path.** `tests/verify.lua` covers the guild-mismatch discard and `ClearApprovals`. The `wipe(pendingMessages)` branch in `OnRosterEvent` is still uncovered |
+| 6 | Four modules had no offline path | **Partly resolved.** `Options.lua` is now covered; `UI.lua`, `Tabard.lua`, `Broker.lua` still are not |
+| 7 | `A.lastMessages` dead state | **Open, unchanged.** Still declared at `Core.lua:32`, still referenced nowhere |
+| 8 | `messageSpacing` and `loginCooldown` have no UI control | **Open, unchanged.** Still 9 toggles and 4 template editors, no numeric inputs |
+| 9 | Hardcoded "6 seconds" options label could drift | **Resolved.** Now reads "Automatic messages are rate-limited; verified messages only send when you click Send", which no longer asserts a specific number |
+| 10 | Tabard initial-check ordering issue | **Open, unchanged.** `Tabard.lua` was not touched |
+| 11 | Unpruned `A.eventsSeen` | **Open, unchanged** |
+| 12 | `OnDefault` shallow copy | **Open, and now slightly more consequential** — see new findings |
+| 13 | Profession-name fallback degradation | **Open, unchanged** |
+| 14 | `A.GetActivityType` convention inconsistency | **Open, unchanged** |
+| 15 | No CI | **Open, and the case is stronger** with four harnesses instead of one |
 
 ## Test Coverage
 
-- **Overall**: Fair. Strong on the safety-critical logic, absent elsewhere.
-  This rating comes from reading the harness, not from running it: no Lua interpreter is
-  installed on this machine, so the suite was not executed during this pass.
-- **Unit Tests**: One offline harness, `tests/smoke.lua`, 72 lines. It stubs the client
-  globals it needs, loads `Core.lua`, `Roster.lua`, and `Alerts.lua` via
-  `loadfile(...)("ForeverGuildComms", A)`, and asserts against fake tables. It dies on the
-  first failed `assert` and prints a `PASSED` summary otherwise.
-- **Integration Tests**: None.
-- **Performance Tests**: None, and not warranted.
-- **Manual verification**: A ten-step in-game checklist is the only path for the four
-  modules that cannot load offline.
+- **Overall**: Good on the message pipeline and settings migration, absent on the three
+  frame-heavy modules. A clear improvement over 0.1.0.
+- **This rating comes from reading the harnesses, not running them.** No Lua interpreter
+  is installed on this machine — `lua5.1`, `lua`, `luajit`, `lua5.4`, and `lua54` were all
+  checked and none resolved — so none of the four suites was executed during this pass.
+- **Unit tests**: four harnesses, 207 lines. Each stubs only the globals its own path
+  touches, dies on the first failed `assert`, and prints a `PASSED` summary.
+- **Integration tests**: `tests/settings.lua` is arguably one — it loads two modules,
+  runs `A:Initialize`, and drives real widget handlers.
+- **Performance tests**: none, and not warranted.
+- **Manual verification**: the in-game checklist was revised to ten steps and now leads
+  with Verify mode, which is the right emphasis for a release whose point is the review
+  step.
 
-### What the harness locks down
+### What `tests/verify.lua` locks down
 
-Notably, each case asserts both the positive outcome and the corresponding "must not
-fire" outcome, which is the right shape for this product:
+This is the most valuable new file in the release. It captures `C_Timer.After` callbacks
+into a list rather than running them, which lets it fire the drain timer at a chosen
+moment and assert what happens across a mode change. Thirteen assertions cover:
 
-| Invariant | Positive case | Negative case |
-| --- | --- | --- |
-| Self level-up silence | Bob's level-up queues one message | Hero's own level-up queues nothing |
-| Login greeting | Alice offline to online queues one greeting | - |
-| Guild join | Localized join line queues one welcome | Hero's own join queues nothing |
-| Craft detection | Request naming a cached recipe alerts | - |
-| Group detection | `LFG Deadmines` alerts | Hero's own guild chat does not alert |
-| Recipe cache | A learned recipe enters the cache | An unlearned recipe does not |
+| Invariant | Assertion |
+| --- | --- |
+| Verify mode never auto-sends | One staged entry, zero sends, review window shown once |
+| Dedup applies in Verify mode too | A repeated `login:alice` does not stage a second entry |
+| Send posts exactly one message | After approval: one send, correct text, backlog empty |
+| Dismiss never sends | Backlog empties, send count unchanged |
+| **Mode toggle cannot flush the backlog** | Switching to Automatic leaves the staged entry unsent and still pending |
+| An older staged entry can still be approved manually | Approval works after the mode switch |
+| Automatic mode enqueues rather than sending immediately | Entry lands in `pendingMessages`, nothing sent yet |
+| **A mode switch during the spacing delay captures the message** | Firing the drain timer after switching to Verify stages instead of sending |
+| A message cannot cross a guild boundary | After the guild changes, approving discards instead of sending |
+| `ClearApprovals` empties the backlog | Asserted directly |
+| Automatic still works end to end | Final entry sends without a click |
+| The channel is always GUILD | The `SendChatMessage` stub asserts `channel == "GUILD"` on every call |
 
-### Coverage gaps, ranked
+The two bolded rows are the invariants most likely to be broken by a careless future
+refactor, and they are the ones most explicitly pinned. That is good test design.
 
-1. **The send queue has no automated coverage.** `smoke.lua` replaces `A.QueueGuild` with
-   a stub that appends to a local table. This is the correct way to observe the diff, but
-   it means `QueueGuild`'s dedup call, `DrainQueue`'s spacing arithmetic, the
-   `wipe(pendingMessages)` path when `CanUse` turns false, and `SendGuild`'s clamp and
-   `pcall` are all untested. These four functions are the single most safety-critical
-   code in the project.
-2. **`A:IsDuplicate` is untested.** Because `QueueGuild` is stubbed, no test exercises the
-   cooldown windows (300s logins, 300s joins, 1800s level-ups, 120s alerts). The
-   `GetTime` stub increments by one per call, which would make writing these tests
-   straightforward.
-3. **`A:IsSelf` realm handling is untested.** The harness covers GUID and plain-name
-   matching, but not the `-Realm` suffix branch or the `GetUnitName` / `UnitFullName`
-   variants collected into `A.selfKeys`.
-4. **The suspicious-roster-read guard is untested.** Neither the `count == 0` rejection
-   nor the "collapsed below 70% when over 10 members" rejection has a test, despite both
-   being explicit anti-spam protections.
-5. **The guild-change path is untested.** `OnRosterEvent`'s reset and
-   `wipe(self.pendingMessages)` on a guild change is a stated invariant with no coverage.
-6. **Four modules have no offline path at all**: `UI.lua`, `Options.lua`, `Tabard.lua`,
-   `Broker.lua`. `Tabard.lua` is the most testable of these — `inMajorCity` and
-   `guildTabardEquipped` need only `C_Map`, `GetRealZoneText`, and `GetInventoryItemID`
-   stubs, and `CheckTabard`'s transition logic is pure state machine. It is a candidate
-   for the harness without restructuring.
+### What `tests/settings.lua` locks down
+
+A metatable-based fake widget layer makes `Options.lua` loadable offline. `CreateFrame`
+records every widget in a flat list, so the test can afterwards locate widgets by
+template name or by label text and invoke their stored `OnClick` handlers. It asserts:
+
+- a custom login template survives migration;
+- a blank join template and a whitespace-only level template are replaced by defaults;
+- a missing help template is filled from defaults;
+- `outgoingMode` defaults to `"automatic"`, preserving 0.1.0 behavior for existing users;
+- exactly two radio widgets exist and Automatic starts selected;
+- exactly four *Use default* buttons exist, one per template;
+- clicking each radio switches the mode and updates both buttons.
+
+Running `A:Initialize()` with `IsInGuild` stubbed to `false` is a thoughtful detail: it
+tests the migration without any risk of the test triggering the send path.
+
+### Remaining coverage gaps, ranked
+
+1. **`UI.lua` has no automated coverage**, and it now holds the review window — the UI
+   through which the user authorizes public messages. `tests/settings.lua` has already
+   demonstrated the technique that would reach it. `UpdateApprovalsUI`'s paging, clamping,
+   and index binding are pure logic over a list and would be straightforward to assert.
+2. **`Tabard.lua` still untested**, and still carries the suspected ordering defect
+   below. It remains the easiest of the three to bring in: two stubbable helpers and a
+   pure state machine.
+3. **`Broker.lua` untested.** Low value; it is 38 lines of string assembly and click
+   routing.
+4. **The spacing arithmetic is still unasserted.** `tests/verify.lua` fires the captured
+   timer directly, so it never checks that the computed delay equals
+   `max(3, messageSpacing)`. The stub discards the delay argument entirely.
+5. **`wipe(pendingMessages)` when `CanUse` turns false is still uncovered**, both the
+   up-front branch in `DrainQueue` and the `OnRosterEvent` guild-change branch.
+6. **`IsSelf` realm handling and the suspicious-roster-read guard** remain untested,
+   carried forward from 0.1.0.
+7. **The 30-entry backlog cap is untested.** `StageApproval` drops index 1 when full;
+   nothing asserts that the oldest is the one discarded, or that the UI indices stay
+   consistent afterwards.
 
 ## Code Quality Indicators
 
-- **Linting**: Not configured. No `.luacheckrc`, no formatter config. The upstream AI-DLC
-  archive carries a `.markdownlint-cli2.yaml`, but that is not part of this project.
-- **Code Style**: Consistent. 4 spaces, no tabs, no trailing whitespace, lines under
-  roughly 100 characters, `{key=value}` table constructors for compact data and one entry
-  per line for config. Methods are `PascalCase`, state and locals `camelCase`. The style
-  is codified in `.kiro/steering/lua-style.md` and the code matches it throughout; the
-  consistency appears to be maintained by convention rather than tooling.
-- **Documentation**: Good. The README covers install, features, commands, templates, a
-  suggested test sequence, and a frank limitations section. Eight steering documents
-  record the product's non-goals, safety invariants, client constraints, and conventions.
-  Code comments are sparse and explain *why* a guard exists rather than what a line does
-  — the realm-suffix note in `A:IsSelf`, the incomplete-roster guard in `OnRosterEvent`,
-  the item-5976 note in `Tabard.lua`, the fresh-cache note in `ScanRecipes`.
-- **Error handling**: Good. The one call that can genuinely fail, `SendChatMessage`, is
-  wrapped in `pcall` with the error surfaced through `A:Print`. Every Blizzard API is
-  feature-detected before use. External data is type-checked before use
-  (`type(message) ~= "string"`, `type(previous.level) == "number"`).
-- **Global hygiene**: Good. Exactly one namespace global (`_G.ForeverGuildComms`), two
-  `SLASH_*` variables, one `SlashCmdList` entry, three named frames, and two popup keys.
-  No `getglobal`, no `loadstring`, no `/run`-style string loading.
-- **Control flow**: Good. Early-return guards throughout, little nesting. `A:BuildOptions`
-  is the deepest function but its nesting is closure definitions, not branching.
+- **Linting**: still not configured. No `.luacheckrc`, no formatter config. Also no
+  `.gitattributes`, which is why git reports LF-to-CRLF normalization warnings on all
+  seven modified files.
+- **Code Style**: consistent, and the new code matches the established conventions. The
+  four new `Core.lua` methods follow the `function A:Name()` form with early-return
+  guards; the new UI methods mirror the existing build/update/show triple exactly; the
+  new `outgoingMode` closure sits alongside `section`, `toggle`, and `template` in the
+  same style. Still 12 `local function` definitions and no new globals beyond the one new
+  named frame.
+- **Documentation**: good, and kept in step with the code. The README gained a dedicated
+  "Automatic versus Verify mode" section that states the non-obvious rules explicitly —
+  including that switching back to Automatic does not release pending items, and that
+  switching to Verify captures an in-flight message. The limitations section was updated
+  rather than left stale. New code comments explain *why*: "Never approve messages merely
+  by toggling the mode to Automatic: an explicit approval remains explicit" and "The Send
+  button is the actual user confirmation. Do not schedule a delayed automatic send after
+  a click."
+- **Error handling**: good. `pcall` still wraps the one call that can fail. The new
+  methods all guard their inputs (`if not entry`, `if not self.pendingApprovals[index]`)
+  and re-check `CanUse` at the moment of action rather than trusting an earlier check.
+- **Global hygiene**: good. One new named frame (`FGCApprovalsFrame`), bringing the total
+  to four. No new namespace globals.
+- **Control flow**: good. The new `DrainQueue` body nests one level deeper than before
+  (`if entry and CanUse` then `if sameGuild` then the mode branch), which is the deepest
+  point in the file but still readable.
+
+### Observation: the new code fails safe at every branch
+
+Worth recording because it is the clearest signal of intent in the release. Every edge
+case introduced by the mode feature resolves toward *not sending*:
+
+| Situation | Resolution |
+| --- | --- |
+| Unrecognized persisted mode value | Coerced to `"automatic"`, the documented default, rather than left undefined |
+| Mode switched to Verify mid-flight | Message staged, not posted |
+| Mode switched to Automatic with a backlog | Backlog untouched; a console note points at `/fgc verify` |
+| Guild changed before the drain timer fires | Entry silently discarded |
+| Guild changed before an approval click | Entry discarded with an explanatory message |
+| `CanUse` false at drain time | Entry dropped |
+| `CanUse` false at approval time | Refused with a printed reason |
+| Backlog at capacity | Oldest *unsent* entry dropped, rather than flushing anything |
+| Template blanked by the user | Empty message rejected by `QueueGuild` before it can consume a cooldown key |
 
 ## Technical Debt
 
-### Dead state
-- **`A.lastMessages = {}`** (`Core.lua:32`) is declared and never read or written
-  anywhere in the codebase, including the test harness. `A.eventsSeen` performs the
-  duplicate-tracking role it was presumably intended for. Safe to remove.
+### New in 0.2.0
 
-### Unreachable configuration
-- **`messageSpacing` and `loginCooldown` have no UI control.** Both are account settings
-  in `A.defaults` and both are consumed by code (`DrainQueue` and the login cooldown key
-  respectively), but `Options.lua` builds nine toggles and four template edit boxes and
-  no numeric inputs. A user cannot change either value without editing the SavedVariables
-  file by hand.
-- **A hardcoded options label can drift from behavior.** `Options.lua` states
-  "Automatic messages are queued at least 6 seconds apart." That is correct for the
-  default, but `DrainQueue` computes `max(3, db.messageSpacing)`, so the label would be
-  wrong for any other value. Deriving the text from `A.db.messageSpacing` would keep it
-  honest, and is more worthwhile if a control is added.
+#### `OnDefault` resets the outgoing mode without the warning its sibling prints
+`Options.lua`'s restore-defaults handler copies all of `A.defaults` over `A.db`, which
+now includes `outgoingMode`. A user in Verify mode who clicks Restore Defaults is
+silently switched to Automatic, after which future greetings post without review.
 
-### Latent ordering issue in the tabard reminder
-`A:Initialize` schedules `CheckTabard(true)` at 3 seconds. `PLAYER_ENTERING_WORLD` also
-fires around login and routes to `ScheduleTabardCheck`, which runs `CheckTabard(false)`
-at 1.2 seconds. On the 1.2-second call `A.wasInCity` is nil, so the function records the
-current state and returns without prompting because `initial` is false. By the time the
-3-second call arrives, `before == nowCity`, so it returns early too.
+The radio button's own `OnClick` prints a note when switching to Automatic with a
+non-empty backlog; `OnDefault` performs the same switch with no note. The behavior is
+also safe in the important respect — already-staged messages are not released, since
+`OnDefault` does not touch `pendingApprovals` — but the inconsistency is worth closing,
+either by printing the same note or by preserving the mode across a defaults restore.
+Given that this setting governs whether the addon speaks publicly without the user
+present, preserving it is arguably the better choice.
 
-The consequence is that the "you logged in already standing in a capital city without
-your tabard" prompt is likely never shown, which is precisely the case the `initial`
-parameter exists to handle. Zone-transition prompts after login are unaffected.
+#### The shallow copy in `OnDefault` is now closer to mattering
+The handler copies one level deep. That is still correct for the current shape, where
+`templates` is the only nested table and it is flat. But `A.defaults` gained a key this
+release, and the pattern will silently break the first time a default is nested two
+levels. `fillDefaults` already recurses properly and could be reused.
 
-This is inferred from reading the code and the event registrations; the actual firing
-order of `PLAYER_LOGIN` versus `PLAYER_ENTERING_WORLD` and the timer resolution in the
-live Forever client have **not** been verified. It should be confirmed in game before
-being treated as a defect. The straightforward fix would be to have the initial check
-own the first observation, for example by not letting the debounced path populate
-`A.wasInCity` until the initial check has run.
+#### No rate limit on approvals
+`ApproveMessage` calls `SendGuild` directly with no spacing and no cooldown of its own.
+A user with four rows visible can click Send four times in quick succession and post four
+messages back to back, with none of the `max(3, messageSpacing)` protection the automatic
+path enforces.
 
-### Degradation path in the recipe cache
-`ScanRecipes` resolves the profession name through
-`C_TradeSkillUI.GetProfessionChildSkillLineID` and
-`GetProfessionInfoBySkillLineID`, and falls back to the literal string
-`"Current Profession"` when either is missing. Because the function then assigns
-`self.char.recipes[profession] = known` — a fresh table for one profession — a client
-where the skill-line APIs are absent collapses every profession into that one bucket, so
-each scan overwrites the previous profession's recipes and only the most recently opened
-profession stays cached. Craft alerts would silently narrow to one profession.
+This looks deliberate: the README states that "Messages sent via deliberate Send clicks
+are not delayed", and the code comments that the click is the confirmation. The precedent
+is `SendHelpRequest`, which also bypasses the queue — but that one still imposes a
+20-second self-limit, so the asymmetry is real. Since the user is present and clicking,
+this is a far smaller risk than unattended spam, but a modest floor (even one second)
+would close the gap without harming the experience.
 
-This is a graceful degradation rather than a crash, and the harness exercises exactly
-this fallback bucket. It is worth a note in the README limitations section, since the
-user-visible symptom (some known recipes stop matching) is hard to attribute.
+#### `ShowApprovals` is called on every staged message
+`StageApproval` ends with `if self.ShowApprovals then self:ShowApprovals() end`, so the
+review window re-shows each time a new message is staged. With several guildmates logging
+in during a busy evening this will surface the window repeatedly, possibly over whatever
+the player is doing. The README documents it ("The popup appears as new review items are
+created"), so it is intentional, and a user who wants quiet can choose Automatic. Still,
+an option to suppress the auto-show, or showing only on the first staged entry while the
+window is closed, would be a reasonable refinement.
 
-### Unbounded session growth in `A.eventsSeen`
-Cooldown keys are written and never pruned. The alert key embeds the full lowercased
-message text, so a busy guild produces a new key for every distinct request line. Growth
-is bounded by session length and the table holds only short strings against numbers, so
-the practical memory cost is small, but a long-lived session accumulates entries that can
-never match again. A sweep of expired keys during `DrainQueue` or on a timer would bound
-it.
+#### Row index binding depends on an undocumented discipline
+Approval rows capture `row.entryIndex` during `UpdateApprovalsUI`, and the Send and
+Dismiss handlers pass that stored index to `ApproveMessage` / `DismissMessage`. Because
+the backlog shifts whenever an entry is removed — and whenever the 30-cap drops index 1 —
+a stale index would act on the *wrong message*, which is precisely the product's worst
+failure mode.
 
-### Minor convention inconsistency
-`A.GetActivityType` is assigned as a plain closure inside `BuildRequestUI`
-(`self.GetActivityType = function() ... end`) and called as `self.GetActivityType()` with
-a dot rather than a colon. Every other public entry point on `A` is a
-`function A:Method()` definition. Functionally fine, since it closes over `currentType`
-and `types`, but it is the one place the module pattern is not followed.
+In the current code this is safe: every mutation path calls `UpdateApprovalsUI`, which
+re-binds all four rows, and WoW's Lua is single-threaded so a click handler cannot
+interleave with an event handler mid-function. The risk is not a present defect but a
+fragile invariant — the safety depends on every future mutation path remembering to
+refresh. Keying rows by a monotonic entry id instead of a positional index would make the
+binding robust by construction. Worth a comment at minimum.
 
-### Shallow copy in `OnDefault`
-`Options.lua`'s restore-defaults handler copies `A.defaults` one level deep: table values
-get a fresh table and their immediate children are copied. This is correct for the
-current shape, where `templates` is the only nested table and it is flat. Any future
-default nested two levels deep would be shared by reference with `A.defaults`, letting a
-user edit corrupt the defaults table for the session. `fillDefaults` already recurses
-properly and could be reused here.
+#### The queue contract changed without a compatibility note
+`A.pendingMessages` holds records now, not strings. Nothing in the current codebase reads
+it expecting a string, and `tests/smoke.lua` is unaffected because it stubs `QueueGuild`
+entirely. But this is the kind of silent contract change that is easy to trip over later,
+and it is not mentioned in any comment.
 
-### No CI
-Nothing runs the harness automatically. The pre-release checklist in
-`.kiro/steering/release-packaging.md` is a manual gate: offline tests print `PASSED`,
-version strings match in three places, every source file is in the TOC in the right
-order, the README reflects the code, and the in-game checklist has been walked or the
-gaps written down. A single script that runs the harness and verifies the three version
-strings agree would remove the most error-prone items from that list.
+#### `.kiro/steering/testing.md` is now out of date
+The steering document still says only `Core.lua`, `Roster.lua`, and `Alerts.lua` are
+loadable offline and that `Options.lua` must be tested in game — which
+`tests/settings.lua` disproves. It also documents only `tests/smoke.lua` and gives a
+single run command, with no mention of the three new harnesses. Since the steering files
+are what guide future work on this project, a stale one actively misdirects. This is the
+highest-value documentation fix in the list.
+
+### Carried forward unchanged from 0.1.0
+
+- **`A.lastMessages`** is still declared and still referenced nowhere. Safe to remove.
+- **`messageSpacing` and `loginCooldown` still have no UI control**, despite both being
+  consumed by code. Reaching them still requires hand-editing SavedVariables. The new
+  options text now refers to automatic messages being "rate-limited" without saying by
+  how much, which is accurate but leaves the user unable to see or change the value.
+- **`A.eventsSeen` is never pruned.** Unchanged, and Verify mode does not add keys beyond
+  what Automatic already created.
+- **The tabard initial-check ordering issue.** `Tabard.lua` was not modified, so the
+  analysis stands: the 1.2-second debounced check from `PLAYER_ENTERING_WORLD` populates
+  `A.wasInCity` before the 3-second `CheckTabard(true)` runs, so the latter sees no
+  transition and returns early, and the login-time prompt likely never fires. Still
+  inferred from source and still **not verified in a live client**.
+- **The profession-name fallback** in `ScanRecipes` still collapses all professions into
+  one `"Current Profession"` bucket when the skill-line APIs are missing, so each scan
+  overwrites the last. Still worth a README note.
+- **`A.GetActivityType`** is still a dot-called closure rather than a `function A:`
+  method, the one place the module pattern is not followed.
+- **No CI.** With four harnesses, the manual pre-release checklist now has more steps to
+  get wrong, not fewer.
 
 ## Patterns and Anti-patterns
 
 ### Good Patterns
 
-- **Single outbound chat path.** Every automatic message goes `QueueGuild` to
-  `DrainQueue` to `SendGuild`. One place to audit, one place to add a guard. The one
-  bypass is explicit, user-initiated, and separately rate-limited.
-- **Single event dispatcher.** 14 events on one frame, with the
-  `if not A.initialized then return end` gate enforced once rather than in every handler.
-- **Baseline-first roster diffing.** The first read after login, reload, or a guild change
-  updates state and sends nothing. Choosing to miss early transitions rather than risk
-  greeting everyone at once is the correct trade for the product and is documented as
-  such.
-- **Layered independent guards on every public message.** `CanUse`, then the feature
-  toggle, then self-exclusion, then dedup by key, then queue spacing. No single guard is
-  load-bearing alone.
-- **Defense in depth where two events can describe one fact.** `OnSystemGuildJoin` is
-  reachable from both `CHAT_MSG_SYSTEM` and `UI_INFO_MESSAGE`, so the same guild join can
-  arrive twice; the 300-second `join:` cooldown key is what makes that harmless. The
-  dedup layer is genuinely load-bearing here, not belt-and-braces.
-- **Cheap gate before expensive match.** `MatchCraft` requires a request phrase (twelve
-  plain substring tests) before scanning the recipe cache, so the O(recipes) substring
-  search runs only on lines that are actually requests.
-- **Type-checking external data.** Roster levels, chat messages, and Blizzard globals are
-  validated before use. `type(previous.level) == "number" and previous.level > 0` prevents
-  an uninitialized level from producing a spurious congratulation.
-- **Feature detection everywhere**, including for APIs believed to exist, which is the
-  right posture against a beta client that has already been reorganized once.
-- **Debounce via timer plus boolean latch** rather than `OnUpdate` polling, applied
-  consistently in four places.
-- **Forward-compatible SavedVariables.** `fillDefaults` backfills recursively, so new
-  settings appear without disturbing existing choices, and conservative defaults are the
-  stated policy for anything that could surprise a user (`tabardOnExit` is `false`).
-- **Escaping localized globals properly.** `ERR_GUILD_JOIN_S` has its pattern
-  metacharacters escaped before the `%s` slot becomes a capture, instead of a hardcoded
-  English sentence.
-- **Conservative identity normalization.** `A:IsSelf` strips only an explicit `-Realm`
-  suffix and never shortens further, with a comment explaining that guildmates can share
-  a first name.
-- **Privacy boundary held.** Alerts print locally, push onto a capped list, and never
-  reach guild chat or a whisper. The Whisper button only opens the chat edit box via
-  `ChatFrame_OpenChat`; it sends nothing.
-- **No automation of player actions.** The tabard feature opens the character panel and
-  stops. No gear swap, no invite handling, no auto-reply, no queueing.
-- **Honest documentation.** The README limitations section states plainly that the source
-  is written against documented API but has not been run in a real client, and explains
-  why early transitions are deliberately missed.
+Carried forward and still intact: the single outbound chat path; the single event
+dispatcher; baseline-first roster diffing; layered independent guards; defense in depth
+where two events describe one fact; cheap gate before expensive match; type-checking
+external data; feature detection everywhere; debounce via timer plus boolean latch;
+forward-compatible SavedVariables; properly escaped localized globals; conservative
+identity normalization; the private/public boundary; no automation of player actions;
+honest documentation.
+
+New in 0.2.0:
+
+- **Late-bound delivery decision.** Reading `outgoingMode` again inside the drain timer,
+  rather than only at composition time, is what makes a mid-flight mode change do the
+  right thing. This is a small design choice with a large safety payoff, and it is
+  explicitly tested.
+- **Identity-bound message records.** Stamping each entry with the guild it was composed
+  in, then re-verifying at both delivery points, closes a cross-guild leak that the
+  0.1.0 `wipe(pendingMessages)` approach could only handle for messages still in the
+  queue. Staged messages can now outlive a queue flush and are still protected.
+- **Asymmetric mode transitions.** Automatic-to-Verify captures in-flight messages;
+  Verify-to-Automatic does not release staged ones. Treating the two directions
+  differently is correct precisely because they carry different risk, and both halves are
+  asserted in tests.
+- **Fail-safe setting normalization.** Coercing an unrecognized `outgoingMode` to
+  `"automatic"` on load means a corrupted profile cannot leave delivery in an undefined
+  state.
+- **Dedup before the mode branch.** Verify mode inherits full duplicate protection for
+  free, so the review window cannot be flooded with repeats.
+- **Tests that pin the non-obvious rules.** The two hardest-to-reason-about behaviors in
+  the feature are exactly the two with the most pointed assertions.
+- **A compile-only smoke check.** `tests/syntax.lua` is six lines and catches the single
+  most embarrassing possible regression — shipping a file that does not parse. Cheap,
+  and it covers all seven modules including the three nothing else loads.
+- **Synthetic widget layer for offline UI testing.** A genuinely useful technique that
+  moved a module out of the "in-game only" bucket, and that generalizes to `UI.lua`.
 
 ### Anti-patterns
 
-- **Dead state left in place** (`A.lastMessages`). Minor, but it invites a future reader
-  to assume it is part of the dedup design.
-- **Settings that exist in code but not in the UI** (`messageSpacing`, `loginCooldown`).
-  The user-visible contract and the implemented contract have diverged slightly.
-- **Duplicated role-availability logic.** `(self.classRoles[self.playerClass] or {})[role]`
-  appears in both `A:Initialize` and `BuildRequestUI`. A small `A:CanFillRole(role)`
-  helper would remove the repetition and give the rule one home.
-- **A hardcoded number inside a user-facing string** (the "6 seconds" label) that can
-  disagree with the value actually used.
-- **Unpruned cache** (`A.eventsSeen`), as described above.
+- **Positional index binding between a UI row and a mutable list**, as described above.
+- **A safety-relevant setting reset by a generic defaults handler** without the warning
+  its dedicated control prints.
+- **Dead state left in place** (`A.lastMessages`), now one release older.
+- **Settings that exist in code but not in the UI** (`messageSpacing`, `loginCooldown`),
+  now one release older.
+- **Duplicated role-availability logic**, `(self.classRoles[self.playerClass] or {})[role]`
+  in both `A:Initialize` and `BuildRequestUI`. Unchanged.
+- **A stale steering document** that contradicts the code it is meant to guide.
+- **Unpruned cache** (`A.eventsSeen`). Unchanged.
 
 ## Security Posture
 
-No network surface, no credential handling, no file I/O outside the client's own
-SavedVariables mechanism, no `loadstring`, no dynamic code loading, and no addon-to-addon
-messaging. The relevant risks for an addon of this kind are taint and unintended social
-output, and both are addressed:
+Unchanged and still sound. No network surface, no credential handling, no file I/O
+outside SavedVariables, no `loadstring`, no dynamic code loading, no addon-to-addon
+messaging. All gear, invite, and targeting actions remain in the player's hands, so no
+protected function is called from a tainted path.
 
-- All gear, invite, and targeting actions stay in the player's hands, so no protected
-  function is called from a tainted path.
-- User-supplied template text is clamped at three separate points (`A:Format`,
-  `A:SendGuild`, and `SetMaxLetters` on the edit boxes) and is only ever used as a chat
-  payload, never as code or as a pattern.
-- The one spot where user-influenced text becomes a Lua pattern is
-  `OnSystemGuildJoin`, and that input is a Blizzard global rather than user input, with
-  its metacharacters escaped before use.
+The new feature slightly *improves* the posture in one respect: Verify mode gives the
+user a way to run the addon with zero unattended public output while keeping every
+private feature, which is a meaningful option for anyone cautious about an addon speaking
+in their guild.
+
+User-supplied template text is now clamped at four points rather than three — `A:Format`,
+the `QueueGuild` entry builder, `A:SendGuild`, and `SetMaxLetters` on the edit boxes —
+and is still only ever used as a chat payload, never as code or as a pattern. The one
+place user-influenced text becomes a Lua pattern remains `OnSystemGuildJoin`, whose input
+is a Blizzard global with its metacharacters escaped.
 
 ## Recommendations
 
-Ordered by value relative to effort.
+Ordered by value relative to effort. Items marked *carried* were in the 0.1.0 list.
 
 | # | Recommendation | Effort | Rationale |
 | --- | --- | --- | --- |
-| 1 | Add harness coverage for `QueueGuild`, `DrainQueue`, `IsDuplicate`, and `SendGuild` | Low | These are the most safety-critical functions and currently the only ones stubbed out of their own tests |
-| 2 | Verify the tabard initial-check ordering in game, then fix if confirmed | Low | A documented feature probably never fires on login |
-| 3 | Add tests for the suspicious-roster-read guard and the guild-change wipe | Low | Both are explicit anti-spam invariants with no coverage |
-| 4 | Remove `A.lastMessages` | Trivial | Dead state |
-| 5 | Expose `messageSpacing` and `loginCooldown` in Options, and derive the spacing label from the value | Low | Closes the gap between documented and reachable configuration |
-| 6 | Add a release script that runs the harness and checks the three version strings agree | Low | Removes the most error-prone manual pre-release steps |
-| 7 | Bring `Tabard.lua` into the offline harness | Medium | The most testable of the four untested modules; pure state machine behind two stubbable helpers |
-| 8 | Note the profession-name fallback degradation in the README limitations | Trivial | A silent narrowing of craft alerts that is otherwise hard to attribute |
-| 9 | Prune expired keys from `A.eventsSeen` | Low | Bounds session growth |
-| 10 | Extract `A:CanFillRole(role)` and reuse `fillDefaults` in `OnDefault` | Low | Removes duplicated logic and a latent shallow-copy issue |
-| 11 | Add a `.luacheckrc` | Low | Would catch dead state and accidental globals automatically rather than by review |
+| 1 | Update `.kiro/steering/testing.md` to describe all four harnesses and drop the claim that `Options.lua` cannot be tested offline | Trivial | A stale steering file misdirects every future change; the code has already outrun it |
+| 2 | Make `OnDefault` either preserve `outgoingMode` or print the same warning the radio prints | Trivial | A defaults restore should not quietly re-enable unattended public messaging |
+| 3 | Key approval rows by a monotonic entry id rather than a list position | Low | Removes a fragile invariant whose failure mode is sending the wrong message |
+| 4 | Verify the tabard initial-check ordering in game, then fix if confirmed *(carried)* | Low | A documented feature probably never fires on login |
+| 5 | Add a single runner script that executes all four harnesses and checks the three version strings agree | Low | Four harnesses and a three-place version rule is more manual pre-release work than before |
+| 6 | Bring `UI.lua`'s `UpdateApprovalsUI` into the harness using the `settings.lua` widget technique | Medium | The review window is now part of the authorization path for public messages |
+| 7 | Add a modest floor between consecutive approvals | Low | Closes the one spacing gap, consistent with `SendHelpRequest`'s existing self-limit |
+| 8 | Test the 30-entry backlog cap, and that it drops the oldest | Low | Untested bound on a safety-relevant list |
+| 9 | Remove `A.lastMessages` *(carried)* | Trivial | Dead state, two releases running |
+| 10 | Expose `messageSpacing` and `loginCooldown` in Options *(carried)* | Low | Closes the gap between documented and reachable configuration |
+| 11 | Make the review window's auto-show optional, or show only when it is closed and the backlog was empty | Low | Repeated popups during a busy login period will annoy |
+| 12 | Add a comment noting that `pendingMessages` holds records, not strings | Trivial | Prevents a future contract trip-up |
+| 13 | Bring `Tabard.lua` into the harness *(carried)* | Medium | Pure state machine behind two stubbable helpers |
+| 14 | Note the profession-name fallback degradation in the README limitations *(carried)* | Trivial | A silent narrowing of craft alerts that is hard to attribute |
+| 15 | Prune expired keys from `A.eventsSeen` *(carried)* | Low | Bounds session growth |
+| 16 | Extract `A:CanFillRole(role)` and reuse `fillDefaults` in `OnDefault` *(carried)* | Low | Removes duplicated logic and a latent shallow-copy issue |
+| 17 | Add a `.luacheckrc` and a `.gitattributes` *(partly carried)* | Low | Would catch dead state and accidental globals automatically; would also stop the LF/CRLF churn git is warning about |
 
-None of these are blocking. The codebase is in good shape for a 0.1.0 beta whose own
-documentation is clear that live-client verification is still outstanding.
+None of these are blocking. The release improves on 0.1.0 in exactly the dimension that
+matters most for this product, and it did so with tests. The most valuable follow-ups are
+the two trivial ones at the top: the steering file and `OnDefault`.

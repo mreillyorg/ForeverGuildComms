@@ -80,6 +80,7 @@ function A:OnRosterEvent(event)
         -- Don't leak queued greetings into a different guild after a guild change.
         if self.rosterGuild and guild ~= self.rosterGuild then
             wipe(self.pendingMessages)
+            if self.ClearApprovals then self:ClearApprovals() end
         end
         self.rosterReady = false
         self.roster = {}

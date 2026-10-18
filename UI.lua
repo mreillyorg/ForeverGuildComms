@@ -53,29 +53,36 @@ function A:BuildUI()
     self.alertRows = rows
     self.alertPage = 1
     self.alertPageText = Label(alerts, "", 412, -45, 130, "GameFontHighlightSmall")
-    Button(alerts, "< Prev", 18, -380, 88, function()
+    Button(alerts, "< Prev", 18, -380, 80, function()
         A.alertPage = math.max(1, A.alertPage-1)
         A:UpdateAlertsUI()
     end)
-    Button(alerts, "Next >", 443, -380, 88, function()
+    Button(alerts, "Next >", 455, -380, 80, function()
         A.alertPage = A.alertPage + 1
         A:UpdateAlertsUI()
     end)
-    Button(alerts, "Clear", 331, -380, 90, function()
+    Button(alerts, "Clear", 388, -380, 59, function()
         wipe(A.alerts)
         A.alertPage = 1
         A:UpdateAlertsUI()
         A:UpdateBroker()
     end)
-    Button(alerts, "Ask guild for help", 153, -380, 155, function()
+    Button(alerts, "Ask for Help", 249, -380, 130, function()
         alerts:Hide()
         A:ShowRequest()
     end)
+    self.reviewShortcut = Button(alerts, "Review (0)", 110, -380, 130, function()
+        A:ShowApprovals()
+    end)
     alerts:Hide()
+    self:BuildApprovalsUI()
     self:BuildRequestUI()
     self:UpdateAlertsUI()
 end
 function A:UpdateAlertsUI()
+    if self.reviewShortcut then
+        self.reviewShortcut:SetText("Review (" .. #self.pendingApprovals .. ")")
+    end
     if not self.alertRows then return end
     local pages = math.max(1, math.ceil(#self.alerts / 7))
     self.alertPage = math.min(self.alertPage, pages)
@@ -96,6 +103,89 @@ function A:UpdateAlertsUI()
 end
 function A:ShowAlerts()
     if self.alertFrame then self:UpdateAlertsUI(); self.alertFrame:Show() end
+end
+-- Private review window. Each Send button calls SendGuild directly from its
+-- OnClick handler, and Dismiss never touches guild chat.
+function A:BuildApprovalsUI()
+    local f = CreateFrame("Frame", "FGCApprovalsFrame", UIParent, "BasicFrameTemplateWithInset")
+    f:SetSize(625, 446)
+    f:SetPoint("CENTER")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetFrameStrata("DIALOG")
+    if f.TitleText then f.TitleText:SetText("Verify Guild Messages") end
+    Label(f, "Review each greeting or congratulations before it is posted to guild chat.",
+        18, -41, 410, "GameFontHighlightSmall")
+    local rows = {}
+    for i = 1, 4 do
+        local row = CreateFrame("Frame", nil, f)
+        row:SetSize(590, 69)
+        row:SetPoint("TOPLEFT", 18, -71-(i-1)*70)
+        row.heading = Label(row, "", 1, 0, 380, "GameFontNormalSmall")
+        row.message = Label(row, "", 1, -17, 389, "GameFontHighlightSmall")
+        row.message:SetHeight(49)
+        row.message:SetJustifyV("TOP")
+        row.send = Button(row, "Send", 405, -5, 79, function()
+            if row.entryIndex then A:ApproveMessage(row.entryIndex) end
+        end)
+        row.dismiss = Button(row, "Dismiss", 490, -5, 90, function()
+            if row.entryIndex then A:DismissMessage(row.entryIndex) end
+        end)
+        rows[i] = row
+    end
+    self.approvalFrame = f
+    self.approvalRows = rows
+    self.approvalPage = 1
+    self.approvalPageText = Label(f, "", 460, -42, 150, "GameFontHighlightSmall")
+    self.approvalEmpty = Label(f, "No guild messages awaiting approval.", 25, -95, 560, "GameFontHighlight")
+    Button(f, "< Prev", 20, -378, 95, function()
+        A.approvalPage = math.max(1, A.approvalPage - 1)
+        A:UpdateApprovalsUI()
+    end)
+    Button(f, "Next >", 505, -378, 95, function()
+        A.approvalPage = A.approvalPage + 1
+        A:UpdateApprovalsUI()
+    end)
+    Button(f, "Dismiss all", 242, -378, 122, function()
+        A:ClearApprovals()
+    end)
+    f:Hide()
+    self:UpdateApprovalsUI()
+end
+function A:UpdateApprovalsUI()
+    if self.reviewShortcut then
+        self.reviewShortcut:SetText("Review (" .. #self.pendingApprovals .. ")")
+    end
+    if not self.approvalRows then return end
+    local total = #self.pendingApprovals
+    local pages = math.max(1, math.ceil(total / 4))
+    self.approvalPage = math.min(self.approvalPage, pages)
+    self.approvalPageText:SetText("Page " .. self.approvalPage .. " of " .. pages)
+    if total == 0 then self.approvalEmpty:Show() else self.approvalEmpty:Hide() end
+    local titles = {login="Login greeting", join="New member welcome", level="Level congratulations"}
+    for i, row in ipairs(self.approvalRows) do
+        local idx = (self.approvalPage - 1)*4 + i
+        local entry = self.pendingApprovals[idx]
+        if entry then
+            row:Show()
+            row.entryIndex = idx
+            row.heading:SetText((entry.time or "") .. "  " .. (titles[entry.kind] or "Guild message"))
+            local line = entry.text or ""
+            row.message:SetText(line)
+        else
+            row.entryIndex = nil
+            row:Hide()
+        end
+    end
+end
+function A:ShowApprovals()
+    if self.approvalFrame then
+        self:UpdateApprovalsUI()
+        self.approvalFrame:Show()
+    end
 end
 function A:BuildRequestUI()
     local f = CreateFrame("Frame", "FGCRequestFrame", UIParent, "BasicFrameTemplateWithInset")

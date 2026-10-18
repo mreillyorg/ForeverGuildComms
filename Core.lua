@@ -1,9 +1,10 @@
 local ADDON, A = ...
 _G.ForeverGuildComms = A
 A.name = ADDON
-A.version = "0.1.0-beta"
+A.version = "0.2.0-beta"
 A.defaults = {
     enabled = true,
+    outgoingMode = "automatic", -- "automatic" or "verify" for roster-triggered messages
     greetLogin = true,
     greetJoin = true,
     congratulateLevel = true,
@@ -36,6 +37,7 @@ A.onlineCount = 0
 A.guildCount = 0
 A.lastGuildSend = 0
 A.pendingMessages = {}
+A.pendingApprovals = {}
 
 local function fillDefaults(dest, defaults)
     for key, value in pairs(defaults) do
@@ -98,12 +100,68 @@ function A:SendGuild(message)
     if not ok then self:Print("Couldn't send guild message: " .. tostring(err)) end
     return ok
 end
--- Cooldown queue; messages never sent if the character has subsequently left guild.
+-- Roster-triggered guild messages use either timed automatic delivery or a
+-- private click-to-send review list. Never approve messages merely by toggling
+-- the mode to Automatic: an explicit approval remains explicit.
 function A:QueueGuild(message, key, cooldown)
-    if not self:CanUse() or self:IsDuplicate(key, cooldown or 90) then return end
-    table.insert(self.pendingMessages, message)
-    self:DrainQueue()
+    if not self:CanUse() or type(message) ~= "string" or message == "" then return end
+    if self:IsDuplicate(key, cooldown or 90) then return end
+    local entry = {
+        text = message:sub(1, 250),
+        kind = (type(key) == "string" and key:match("^([^:]+):")) or "message",
+        guild = GetGuildInfo and GetGuildInfo("player") or nil,
+        time = date and date("%H:%M") or "",
+    }
+    if self.db.outgoingMode == "verify" then
+        self:StageApproval(entry)
+    else
+        table.insert(self.pendingMessages, entry)
+        self:DrainQueue()
+    end
 end
+function A:StageApproval(entry)
+    if not entry or not self:CanUse() then return end
+    if #self.pendingApprovals >= 30 then
+        table.remove(self.pendingApprovals, 1)
+    end
+    table.insert(self.pendingApprovals, entry)
+    if self.UpdateApprovalsUI then self:UpdateApprovalsUI() end
+    if self.UpdateBroker then self:UpdateBroker() end
+    if self.ShowApprovals then self:ShowApprovals() end
+end
+function A:ApproveMessage(index)
+    local entry = self.pendingApprovals[index]
+    if not entry then return end
+    if not self:CanUse() then
+        self:Print("Cannot send: you are not in a guild or the addon is disabled.")
+        return
+    end
+    if entry.guild ~= (GetGuildInfo and GetGuildInfo("player") or nil) then
+        self:DismissMessage(index)
+        self:Print("Message discarded: your guild has changed.")
+        return
+    end
+    -- The Send button is the actual user confirmation. Do not schedule a
+    -- delayed automatic send after a click.
+    if self:SendGuild(entry.text) then
+        self.lastGuildSend = self:Now()
+        table.remove(self.pendingApprovals, index)
+        if self.UpdateApprovalsUI then self:UpdateApprovalsUI() end
+        if self.UpdateBroker then self:UpdateBroker() end
+    end
+end
+function A:DismissMessage(index)
+    if not self.pendingApprovals[index] then return end
+    table.remove(self.pendingApprovals, index)
+    if self.UpdateApprovalsUI then self:UpdateApprovalsUI() end
+    if self.UpdateBroker then self:UpdateBroker() end
+end
+function A:ClearApprovals()
+    wipe(self.pendingApprovals)
+    if self.UpdateApprovalsUI then self:UpdateApprovalsUI() end
+    if self.UpdateBroker then self:UpdateBroker() end
+end
+-- Rate-limited automatic queue; re-check the guild and mode before sending.
 function A:DrainQueue()
     if self.queueTimer or #self.pendingMessages == 0 then return end
     if not self:CanUse() then wipe(self.pendingMessages); return end
@@ -112,8 +170,17 @@ function A:DrainQueue()
     self.queueTimer = true
     C_Timer.After(delay, function()
         self.queueTimer = false
-        local msg = table.remove(self.pendingMessages, 1)
-        if msg and self:SendGuild(msg) then self.lastGuildSend = self:Now() end
+        local entry = table.remove(self.pendingMessages, 1)
+        if entry and self:CanUse() then
+            local sameGuild = entry.guild == (GetGuildInfo and GetGuildInfo("player") or nil)
+            if sameGuild then
+                if self.db.outgoingMode == "verify" then
+                    self:StageApproval(entry)
+                elseif self:SendGuild(entry.text) then
+                    self.lastGuildSend = self:Now()
+                end
+            end
+        end
         if #self.pendingMessages > 0 then self:DrainQueue() end
     end)
 end
@@ -137,6 +204,17 @@ function A:Initialize()
     ForeverGuildCommsDB = type(ForeverGuildCommsDB) == "table" and ForeverGuildCommsDB or {}
     ForeverGuildCommsCharDB = type(ForeverGuildCommsCharDB) == "table" and ForeverGuildCommsCharDB or {}
     fillDefaults(ForeverGuildCommsDB, self.defaults)
+    if ForeverGuildCommsDB.outgoingMode ~= "verify" then
+        ForeverGuildCommsDB.outgoingMode = "automatic"
+    end
+    -- Older saved profiles may have accidentally retained blank edit fields.
+    -- Populate those with the built-in defaults; preserve nonempty edits.
+    for key, defaultMessage in pairs(self.defaults.templates) do
+        if type(ForeverGuildCommsDB.templates[key]) ~= "string"
+           or ForeverGuildCommsDB.templates[key]:match("^%s*$") then
+            ForeverGuildCommsDB.templates[key] = defaultMessage
+        end
+    end
     self.db = ForeverGuildCommsDB
     self.char = ForeverGuildCommsCharDB
     self.char.recipes = self.char.recipes or {}
@@ -166,7 +244,7 @@ function A:Initialize()
     if self.SetupRoster then self:SetupRoster() end
     if self.CheckTabard then C_Timer.After(3, function() self:CheckTabard(true) end) end
     if self.TryBroker then self:TryBroker() end
-    self:Print("Loaded. /fgc for alerts and requests; /fgc options for settings.")
+    self:Print("Loaded. /fgc for alerts, /fgc verify to review messages, /fgc options for settings.")
 end
 
 SLASH_FOREVERGUILDCOMMS1 = "/fgc"
@@ -177,6 +255,7 @@ SlashCmdList.FOREVERGUILDCOMMS = function(input)
     if input == "options" or input == "settings" then A:OpenSettings()
     elseif input == "request" or input == "help" then A:ShowRequest()
     elseif input == "alerts" then A:ShowAlerts()
+    elseif input == "verify" or input == "review" then A:ShowApprovals()
     elseif input == "recipes" then
         local count = 0
         for _, recipes in pairs(A.char.recipes) do for _ in pairs(recipes) do count = count + 1 end end
@@ -185,7 +264,7 @@ SlashCmdList.FOREVERGUILDCOMMS = function(input)
         wipe(A.char.recipes)
         A:Print("Recipe cache cleared. Open your professions again to repopulate it.")
     elseif input == "status" then
-        A:Print("Guild members: " .. A.guildCount .. ", online: " .. A.onlineCount .. ", private alerts: " .. #A.alerts)
+        A:Print("Guild members: " .. A.guildCount .. ", online: " .. A.onlineCount .. ", private alerts: " .. #A.alerts .. ", pending review: " .. #A.pendingApprovals .. ", mode: " .. A.db.outgoingMode)
     else A:ShowAlerts() end
 end
 

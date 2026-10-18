@@ -1,5 +1,13 @@
 # Dependencies
 
+**Analysis target**: Forever Guild Comms **0.2.0-beta**
+**Supersedes**: the 0.1.0-beta pass of 2026-10-18
+
+No external dependency was added, removed, or upgraded in 0.2.0. The dependency policy
+and the supply chain surface are unchanged. What changed is the internal graph: the
+approval backlog created new edges in both directions between `Core.lua` and `UI.lua`,
+and `tests/settings.lua` demonstrated that `Options.lua` is loadable offline after all.
+
 ## Internal Dependencies
 
 The project is one package, so "internal dependencies" means the module dependency graph
@@ -28,8 +36,10 @@ flowchart TD
     Core -.->|"guarded: CheckTabard"| Tabard
     Core -.->|"guarded: TryBroker"| Broker
     Core -.->|"guarded: OnGuildChat, ScheduleRecipeScan"| Alerts
+    Core -.->|"guarded: UpdateApprovalsUI,<br/>ShowApprovals (new)"| UI
 
     Roster -.->|"guarded: UpdateBroker"| Broker
+    Roster -.->|"guarded: ClearApprovals (new)"| Core
     Alerts -.->|"guarded: UpdateAlertsUI"| UI
     Alerts -.->|"guarded: UpdateBroker"| Broker
     Options -.->|"guarded: ShowAlerts, ShowRequest,<br/>ScanRecipes, UpdateRequestPreview"| UI
@@ -53,10 +63,15 @@ Hard (upward) dependencies - every feature module depends on Core:
 
 Guarded (downward and sideways) calls - optional at runtime:
     Core.lua    -> Options, UI, Roster, Tabard, Broker, Alerts
+                   (new in 0.2.0: UpdateApprovalsUI, ShowApprovals in UI)
     Roster.lua  -> Broker
+                   (new in 0.2.0: ClearApprovals in Core)
     Alerts.lua  -> UI, Broker
     Options.lua -> UI, Alerts
     Broker.lua  -> UI, Core
+
+Unguarded cross-file calls (safe because Core.lua always loads first):
+    UI.lua      -> Core.lua: ApproveMessage, DismissMessage, ClearApprovals
 ```
 
 ### Dependency details
@@ -84,6 +99,23 @@ Guarded (downward and sideways) calls - optional at runtime:
   `A:SendGuild`, and reads `A.alerts`, `A.classRoles`, `A.roleOrder`, `A.roleNames`,
   `A.char.myRoles`, `A.char.needRoles`, `A.playerClass`, `A.playerName`, and
   `A.db.templates.help`.
+- **0.2.0 addition**: the review window calls `A:ApproveMessage`, `A:DismissMessage`, and
+  `A:ClearApprovals`, and reads `A.pendingApprovals`. These three calls are **unguarded**,
+  which is correct — they live in `Core.lua`, which always loads first.
+
+#### `Core.lua` now calls back into `UI.lua` for the backlog
+- **Type**: Runtime, guarded
+- **Reason**: Every mutation of `A.pendingApprovals` (`StageApproval`, `ApproveMessage`,
+  `DismissMessage`, `ClearApprovals`) calls `UpdateApprovalsUI` and `UpdateBroker`
+  through existence checks, and `StageApproval` also calls `ShowApprovals`. This is a new
+  bidirectional relationship: `Core.lua` owns the data and `UI.lua` owns its presentation,
+  with the guard keeping `Core.lua` independent.
+
+#### `Roster.lua` gained a dependency on the backlog
+- **Type**: Runtime, guarded
+- **Reason**: the guild-change branch of `OnRosterEvent` calls
+  `if self.ClearApprovals then self:ClearApprovals() end`. Guarded despite
+  `ClearApprovals` living in `Core.lua`, consistent with the file's existing style.
 
 #### `Options.lua` depends on `Core.lua`
 - **Type**: Runtime, load-order-enforced
@@ -104,11 +136,25 @@ Guarded (downward and sideways) calls - optional at runtime:
   and the event handler. This is what makes every other file optional from its point of
   view, and what allows `tests/smoke.lua` to load three modules in isolation.
 
-#### `tests/smoke.lua` depends on `Core.lua`, `Roster.lua`, `Alerts.lua`
+#### The four harnesses depend on the modules they load
 - **Type**: Test only, not shipped
-- **Reason**: `loadfile(base .. "Core.lua")("ForeverGuildComms", A)` and the same for the
-  other two. The remaining four modules are not loadable offline because they require
-  real frame, Settings, popup, and LibStub APIs.
+- **Reason**: each calls `loadfile(base .. "<Module>.lua")("ForeverGuildComms", A)`.
+
+| Harness | Loads |
+| --- | --- |
+| `tests/syntax.lua` | all seven modules, compiled but never executed |
+| `tests/smoke.lua` | `Core.lua`, `Roster.lua`, `Alerts.lua` |
+| `tests/verify.lua` | `Core.lua` only |
+| `tests/settings.lua` | `Core.lua`, `Options.lua` |
+
+**Revised offline-testability finding.** The 0.1.0 pass recorded, following the project's
+own `testing.md`, that only `Core.lua`, `Roster.lua`, and `Alerts.lua` could load
+offline, because the rest need real frame, Settings, popup, and LibStub APIs. That is no
+longer accurate. `tests/settings.lua` loads and exercises `Options.lua` by supplying a
+metatable-driven fake widget layer and a stub `Settings` table, and `tests/syntax.lua`
+compiles all seven modules. The remaining genuinely untested modules are `UI.lua`,
+`Tabard.lua`, and `Broker.lua`, and the same technique would reach at least the first two.
+The steering document has not been updated to match; see `code-quality-assessment.md`.
 
 ### Load order constraint
 

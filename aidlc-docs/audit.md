@@ -37,3 +37,28 @@ Timestamps use ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ).
 **Context**: INCEPTION - Reverse Engineering, Step 13. Awaiting explicit user approval.
 
 ---
+
+## Reverse Engineering - Rerun Requested
+**Timestamp**: 2026-10-19T00:45:00Z
+**User Input**: "re-run Reverse Engineering for new changes"
+**AI Response**: "Explicit user rerun request. Per inception/workspace-detection.md Step 3, reverse engineering executes again regardless of artifact staleness when the user explicitly asks. Confirmed the artifacts are in fact stale: artifacts written 2026-10-19T00:37:25, sources modified 2026-10-19T00:40:41. Detected changes via git: 7 files modified (+257/-31) and 3 new untracked test files. The previous artifacts were committed in a3d52a3. Proceeding to re-execute all 13 steps against the changed codebase."
+**Context**: INCEPTION - Reverse Engineering (rerun). The previous approval gate from 2026-10-18T23:53:00Z was never answered; it is superseded by this rerun.
+
+---
+
+## Reverse Engineering - Rerun Complete
+**Timestamp**: 2026-10-19T00:52:00Z
+**User Input**: (no further user input during this stage)
+**AI Response**: "Re-executed all 13 steps of inception/reverse-engineering.md against 0.2.0-beta. Read the full git diff for all 7 modified files and all 3 new test files. Re-measured every count rather than carrying forward the previous numbers. Regenerated all 9 artifacts in aidlc-docs/inception/reverse-engineering/ and rewrote aidlc-state.md with a rerun history table. Re-tested each of the 15 findings from the 0.1.0 pass by pattern search and recorded the status of every one."
+**Context**: INCEPTION - Reverse Engineering (rerun). Change set: the Automatic / Verify outgoing-message mode. New setting `outgoingMode`, new state `A.pendingApprovals`, four new Core methods (StageApproval, ApproveMessage, DismissMessage, ClearApprovals), three new UI methods (BuildApprovalsUI, UpdateApprovalsUI, ShowApprovals), new frame FGCApprovalsFrame, new `/fgc verify` command, two new load-time migrations, and three new offline harnesses. Shipped Lua 882 -> 1097 lines; methods 38 -> 45; business transactions 9 -> 10; harnesses 1 -> 4; test lines 72 -> 207. Version strings verified in sync at 0.2.0-beta across TOC, Core.lua, and README.md. Events unchanged at 14 on one dispatcher.
+**Findings**: 3 of the 15 prior findings resolved (send-queue coverage, IsDuplicate coverage, hardcoded 6-second label), 2 partly resolved (guild-change coverage, offline module coverage), 10 carried forward unchanged. 7 new findings, the two most actionable being that Options.lua OnDefault silently resets outgoingMode without the warning its sibling control prints, and that .kiro/steering/testing.md is now factually out of date against the test suite. No code executed; no Lua interpreter installed on this machine.
+
+---
+
+## Reverse Engineering - Approval Gate (rerun)
+**Timestamp**: 2026-10-19T00:53:00Z
+**User Input**: (awaiting response)
+**AI Response**: "Presented the Reverse Engineering completion message with the two standard options, Request Changes or Approve and Continue. Per the user's scoping, the workflow stops here and will NOT auto-advance to Requirements Analysis without a further instruction."
+**Context**: INCEPTION - Reverse Engineering, Step 13. Awaiting explicit user approval. Supersedes the unanswered gate of 2026-10-18T23:53:00Z.
+
+---
