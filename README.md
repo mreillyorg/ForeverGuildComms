@@ -1,0 +1,2 @@
+# ForeverGuildComms
+Guild communications helper
