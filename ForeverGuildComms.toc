@@ -1,0 +1,15 @@
+## Interface: 16001
+## Title: Forever Guild Comms
+## Notes: Welcomes, guild greetings, levels, crafting and LFG alerts, tabard reminders, and group requests.
+## Author: Michael Reilly
+## Version: 0.1.0-beta
+## SavedVariables: ForeverGuildCommsDB
+## SavedVariablesPerCharacter: ForeverGuildCommsCharDB
+## OptionalDeps: Titan
+Core.lua
+Roster.lua
+Alerts.lua
+Tabard.lua
+UI.lua
+Options.lua
+Broker.lua
