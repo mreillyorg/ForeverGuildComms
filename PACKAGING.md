@@ -2,7 +2,7 @@
 
 The addon is configured for [BigWigsMods/packager](https://github.com/BigWigsMods/packager)
 and WoW Forever beta (**Interface `16001`**). The in-game addon version remains
-**`0.4.0-beta`**. The packager recognises the Forever game type from the TOC;
+**`0.4.1-beta`**. The packager recognises the Forever game type from the TOC;
 no `-g` override is required.
 
 ## GitHub repository layout
@@ -17,6 +17,10 @@ to your GitHub repository root. For example, this must exist:
   .gitignore
   ForeverGuildComms.toc
   Core.lua
+  Languages.lua
+  Accents.lua
+  RaceProfiles.lua
+  Bindings.xml
   Roster.lua
   Alerts.lua
   Tabard.lua
@@ -47,8 +51,8 @@ The `.pkgmeta` file and `.github/workflows` directory must be committed.
    Git repository after committing:
 
    ```bash
-   git tag -a v0.4.0-beta -m "ForeverGuildComms 0.3.0 beta"
-   git push origin v0.4.0-beta
+   git tag -a v0.4.1-beta -m "ForeverGuildComms 0.4.1 beta"
+   git push origin v0.4.1-beta
    ```
 
    Only create the tag if it does not exist. For subsequent updates, change
@@ -83,7 +87,7 @@ been created or configured by this ZIP.
   Windows files under `install/`, tests, `.pkgmeta`, the GitHub workflow,
   and the addon. Run `install/Install-ForeverGuildComms.cmd` after extraction.
 - **Packager ZIP (from GitHub Actions):** Contains the `.toc`, its loadable
-  Lua files, in-game icon `Media/Icon.tga` and `README.md`. `.pkgmeta` excludes `install/`, `tests/`,
+  Lua files, `Bindings.xml` (auto-loaded keybindings), in-game icon `Media/Icon.tga` and `README.md`. `.pkgmeta` excludes `install/`, `tests/`,
   `PACKAGING.md`, promotional icon PNG and the GitHub workflow; hidden config files are skipped
   automatically. This clean ZIP is for normal addon-manager installation.
 

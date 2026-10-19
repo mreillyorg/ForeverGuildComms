@@ -1,7 +1,12 @@
 local ADDON, A = ...
 _G.ForeverGuildComms = A
 A.name = ADDON
-A.version = "0.4.0-beta"
+-- Visible labels in WoW Options > Key Bindings > AddOns.
+BINDING_HEADER_FOREVERGUILDCOMMS = "Forever Guild Comms"
+BINDING_NAME_FGC_OPEN_ALERTS = "Open guild alerts"
+BINDING_NAME_FGC_ASK_HELP = "Ask guild for help"
+BINDING_NAME_FGC_RESCAN_PROFESSION = "Rescan open profession"
+A.version = "0.4.1-beta"
 -- These language preferences are per character; old account-wide settings stay intact.
 A.voiceDefaults = {language="en", accent="none", raceFilter=true, accentStrength="subtle"}
 A.defaults = {
@@ -310,6 +315,23 @@ function A:VoiceChoices(key)
     end
     return {}
 end
+-- Single entry point for TitanPanel, keybindings and any future shortcuts.
+-- None of these actions sends guild chat; help only opens the composer.
+function A:RunQuickAction(action)
+    if not self.initialized then return end
+    if action == "alerts" then
+        self:ShowAlerts()
+    elseif action == "help" then
+        self:ShowRequest()
+    elseif action == "rescan" then
+        if self.ScanRecipes and self:ScanRecipes() then
+            self:Print("Open profession rescanned. /fgc recipes shows your cached recipes.")
+        else
+            self:Print("Open a profession window first, then rescan its learned recipes.")
+        end
+    end
+end
+
 function A:OpenSettings(section)
     if self.settingsCategory and Settings and Settings.OpenToCategory then
         Settings.OpenToCategory(self.settingsCategory:GetID())

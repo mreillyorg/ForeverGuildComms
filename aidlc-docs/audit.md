@@ -62,3 +62,36 @@ Timestamps use ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ).
 **Context**: INCEPTION - Reverse Engineering, Step 13. Awaiting explicit user approval. Supersedes the unanswered gate of 2026-10-18T23:53:00Z.
 
 ---
+
+## Reverse Engineering - Second Rerun Requested
+**Timestamp**: 2026-10-19T02:30:00Z
+**User Input**: "using aidlc, please run another reverse-engineering pass to resync them"
+**AI Response**: "Explicit user rerun request. Per inception/workspace-detection.md Step 3, reverse engineering re-executes when the user asks regardless of staleness; here the artifacts are also three releases stale, describing 0.2.0-beta while the code is at 0.4.1-beta. Re-executing all 13 steps against the current tree."
+**Context**: INCEPTION - Reverse Engineering (second rerun). Spans three releases of change: 0.3.0 (Titan nested menu, timing controls), 0.4.0 (languages and accents), 0.4.1 (opt-in key bindings), plus the installer, packaging, icon and CI work committed alongside them.
+
+---
+
+## Reverse Engineering - Second Rerun Complete
+**Timestamp**: 2026-10-19T02:40:00Z
+**User Input**: (no further user input during this stage)
+**AI Response**: "Re-executed all 13 steps of inception/reverse-engineering.md against 0.4.1-beta, spanning three releases of change. Read the four new modules in full (Languages.lua, Accents.lua, RaceProfiles.lua, TitanMenu.lua) plus the rewritten Core.lua, Bindings.xml, and the five new test harnesses. Read the complete git diffs for the 0.3.0, 0.4.0, 0.4.1, installer, and icon commits. Re-measured every count rather than carrying forward prior numbers. Regenerated all 9 artifacts and rewrote aidlc-state.md with a three-run history and a growth table. Re-tested each of the 17 recommendations from the 0.2.0 pass by pattern search and recorded the status of every one."
+**Context**: INCEPTION - Reverse Engineering (second rerun). Shipped Lua 1,097 -> 1,733 lines across 7 -> 11 modules; methods 45 -> 62; business transactions 10 -> 13; harnesses 4 -> 9; test lines 207 -> 589 (19% -> 34% of shipped source). Events unchanged at 14 on one dispatcher across all four releases. Version strings verified in sync at 0.4.1-beta across TOC, Core.lua, and README.md. Key architectural additions: A:SetOption / A:SetVoiceOption as the single validating writers shared by Settings and the Titan menu; A:CommsText as a one-line indirection making the entire 234-line voice layer removable; A:ChatLimit for UTF-8-safe 250-byte truncation; A:RunQuickAction as a shared dispatcher for the Titan menu and the new opt-in key bindings.
+**Findings**: 6 of the 17 prior recommendations resolved (dead A.lastMessages removed, timing settings exposed and clamped, spacing arithmetic now asserted, TitanMenu and Broker now covered, .gitattributes added, CI exists for packaging), 1 half-resolved, 11 carried forward. 7 new findings. The two most actionable, both trivial: .kiro/steering/testing.md was the number-one recommendation of the previous pass, was not actioned, and is now materially more wrong (documents 1 of 9 harnesses, still claims three modules cannot be tested offline); and packaging is automated on a v* tag while nothing in CI runs the harnesses or checks the three version strings. No code executed; no Lua interpreter installed on this machine.
+
+---
+
+## Reverse Engineering - Approval Gate (second rerun)
+**Timestamp**: 2026-10-19T02:41:00Z
+**User Input**: (awaiting response)
+**AI Response**: "Presented the Reverse Engineering completion message with the two standard options, Request Changes or Approve and Continue. Per the user's consistent scoping across all three runs, the workflow stops here and will NOT auto-advance to Requirements Analysis without a further instruction."
+**Context**: INCEPTION - Reverse Engineering, Step 13. Awaiting explicit user approval. Supersedes the unanswered gates of 2026-10-18T23:53:00Z and 2026-10-19T00:53:00Z.
+
+---
+
+## Steering Correction - testing.md
+**Timestamp**: 2026-10-19T02:55:00Z
+**User Input**: "can you update `testing.md` as mentioned then add it into the commit & ammend the message?"
+**AI Response**: "Rewrote .kiro/steering/testing.md to match the code: documented all nine harnesses with run commands and per-harness coverage, replaced the 'no CI' claim with an accurate note that package.yml packages on a v* tag but runs no tests, replaced the stale offline-testability claim with a per-module breakdown identifying Tabard.lua as the only module no harness loads and UI.lua as loaded-but-not-driven, documented the synthetic widget layer technique, added guidance for extending the harnesses, expanded the in-game checklist from 10 to 14 steps to cover timing controls, languages and accents, and key bindings, and added a pre-tag release gate. Also updated code-quality-assessment.md and aidlc-state.md so they no longer report this finding as open, since the same commit resolves it. Amended the commit to include all three files."
+**Context**: INCEPTION - Reverse Engineering follow-up. Closes the number-one recommendation of both the 0.2.0 and 0.4.1 passes. Resolved count for the 0.2.0 recommendations moves from 6 to 7 of 17; the top open item is now wiring the nine harnesses into CI, since packaging is automated on a tag while testing is not.
+
+---

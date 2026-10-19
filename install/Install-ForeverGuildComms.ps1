@@ -1,6 +1,6 @@
 # ForeverGuildComms integrated installer for Windows PowerShell 5.1+
 # Place this script in the ForeverGuildComms\install folder (as packaged in the ZIP).
-# Installs the TOC, its .lua/.xml files, and the required in-game icon texture.
+# Installs the TOC, Lua files, auto-loaded Bindings.xml, and the icon.
 # Existing SavedVariables, unrelated files and addon directories are never modified.
 # Usage (after Extract All):
 #   Double-click ForeverGuildComms\install\Install-ForeverGuildComms.cmd (recommended).
@@ -153,7 +153,7 @@ function Get-InstallManifest {
     foreach ($rawLine in (Get-Content -LiteralPath $tocPath)) {
         $line = $rawLine.Trim().TrimStart([char]0xFEFF)
         if (-not $line -or $line.StartsWith('#')) { continue }
-        # Current v0.3.0 addon uses simple file names only. Reject paths,
+        # The addon uses simple TOC file names only. Reject paths,
         # scripts other than Lua, traversal, and unrelated assets.
         if ($line -notmatch '^[A-Za-z0-9_-]+\.(lua|xml)$') {
             throw "Invalid entry in addon TOC: $line"
@@ -172,6 +172,13 @@ function Get-InstallManifest {
         throw "Addon source is missing the required icon texture: $iconFile"
     }
     $files.Add($iconFile)
+    # WoW auto-loads Bindings.xml from the addon root. It must NOT appear in
+    # the TOC, so install it separately (including for incremental updates).
+    $bindingsFile = 'Bindings.xml'
+    if (-not (Test-Path -LiteralPath (Join-Path -Path $SourceDir -ChildPath $bindingsFile) -PathType Leaf)) {
+        throw "Addon source is missing the keybindings file: $bindingsFile"
+    }
+    $files.Add($bindingsFile)
     return $files.ToArray()
 }
 
@@ -186,7 +193,7 @@ function Test-SameContents {
 $exitCode = 0
 try {
     Write-Host ''
-    Write-Host 'ForeverGuildComms 0.4.0-beta - integrated installer' -ForegroundColor Green
+    Write-Host 'ForeverGuildComms 0.4.1-beta - integrated installer' -ForegroundColor Green
     Write-Host '---------------------------------------------------'
 
     if (-not (Test-Path -LiteralPath $addonSource -PathType Container)) {

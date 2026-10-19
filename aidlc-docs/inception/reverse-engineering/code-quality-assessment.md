@@ -1,359 +1,378 @@
 # Code Quality Assessment
 
-**Analysis target**: Forever Guild Comms **0.2.0-beta**
-**Supersedes**: the 0.1.0-beta pass of 2026-10-18
+**Analysis target**: Forever Guild Comms **0.4.1-beta**
+**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
 
 ## Summary
 
-0.2.0 is a quality-positive release. The headline feature — an opt-in review step before
-any roster-driven message reaches guild chat — directly strengthens the product's primary
-safety property, and it arrived with tests rather than after them. Three of the eleven
-recommendations from the 0.1.0 assessment are now resolved, including the most important
-one: the send pipeline is no longer stubbed out of its own tests.
+Three releases on, the codebase is in materially better shape than at 0.2.0. Shipped Lua
+grew 58% (1,097 to 1,733 lines) while test code grew 184% (207 to 589), taking coverage
+from 19% to 34% of shipped source by line count. Seven of the seventeen recommendations
+from the previous pass are resolved, including three that had been carried since 0.1.0 and
+one closed during this pass itself.
 
-Test code grew from 72 lines to 207 against 1,097 lines of shipped source, taking test
-coverage from 8% to 19% by line count. More significantly, `tests/verify.lua` exercises
-the *real* `QueueGuild`, `DrainQueue`, `StageApproval`, and `ApproveMessage`, and
-`tests/settings.lua` proves that the Options panel is testable offline — something the
-project's own notes had declared impossible.
+The most consequential improvements are structural rather than cosmetic. `A:SetOption` and
+`A:SetVoiceOption` turned two independent configuration UIs into one validated write path.
+`A:CommsText` made an entire feature layer optional behind a single indirection, and a test
+proves the fallback works. `tests/timing.lua` finally asserts the queue's spacing
+arithmetic, which had been unverified since 0.1.0. And the voice layer — by far the largest
+addition — was built so that it cannot touch text a human wrote.
 
-The remaining concerns are mostly carried forward from 0.1.0 and unchanged. The one new
-finding of substance is that `OnDefault` silently resets the outgoing mode without the
-warning its sibling control prints.
+One finding was closed during this pass itself: `.kiro/steering/testing.md` had been the
+number-one recommendation of the previous review and had not been actioned, leaving it
+documenting one harness out of nine and asserting an offline-testability limit that three
+harnesses disprove. It has now been rewritten to match the code.
 
-## Status of the 0.1.0 Findings
+That leaves one item standing out: packaging is automated while testing is not, so a `v*`
+tag can cut a release without any harness having run.
 
-| # | 0.1.0 finding | Status in 0.2.0 |
+## Status of the 0.2.0 Findings
+
+| # | 0.2.0 recommendation | Status at 0.4.1 |
 | --- | --- | --- |
-| 1 | Send queue (`QueueGuild`, `DrainQueue`, `IsDuplicate`, `SendGuild`) had no automated coverage | **Largely resolved.** `tests/verify.lua` drives all four through the real code path |
-| 2 | `IsDuplicate` untested | **Resolved.** Asserted directly: a repeated `login:alice` does not enqueue twice |
-| 3 | `IsSelf` realm handling untested | **Open, unchanged** |
-| 4 | Suspicious-roster-read guard untested | **Open, unchanged** |
-| 5 | Guild-change path untested | **Resolved for the approval path.** `tests/verify.lua` covers the guild-mismatch discard and `ClearApprovals`. The `wipe(pendingMessages)` branch in `OnRosterEvent` is still uncovered |
-| 6 | Four modules had no offline path | **Partly resolved.** `Options.lua` is now covered; `UI.lua`, `Tabard.lua`, `Broker.lua` still are not |
-| 7 | `A.lastMessages` dead state | **Open, unchanged.** Still declared at `Core.lua:32`, still referenced nowhere |
-| 8 | `messageSpacing` and `loginCooldown` have no UI control | **Open, unchanged.** Still 9 toggles and 4 template editors, no numeric inputs |
-| 9 | Hardcoded "6 seconds" options label could drift | **Resolved.** Now reads "Automatic messages are rate-limited; verified messages only send when you click Send", which no longer asserts a specific number |
-| 10 | Tabard initial-check ordering issue | **Open, unchanged.** `Tabard.lua` was not touched |
-| 11 | Unpruned `A.eventsSeen` | **Open, unchanged** |
-| 12 | `OnDefault` shallow copy | **Open, and now slightly more consequential** — see new findings |
-| 13 | Profession-name fallback degradation | **Open, unchanged** |
-| 14 | `A.GetActivityType` convention inconsistency | **Open, unchanged** |
-| 15 | No CI | **Open, and the case is stronger** with four harnesses instead of one |
+| 1 | Update `testing.md` to describe all harnesses and drop the stale offline claim | **RESOLVED during this pass.** Rewritten to document all nine harnesses with their run commands and coverage, to state that CI packages but does not test, to replace the offline claim with an accurate per-module breakdown, and to extend the in-game checklist and pre-release gate |
+| 2 | Make `OnDefault` preserve `outgoingMode` or warn | **Not done.** Still silently resets the mode, and now also resets per-character voice settings |
+| 3 | Key approval rows by a monotonic id rather than list position | **Not done.** `row.entryIndex` is still positional |
+| 4 | Verify the tabard initial-check ordering in game | **Not done.** `Tabard.lua` untouched since 0.1.0 |
+| 5 | Add a runner that executes all harnesses and checks version strings | **Not done**, and the need grew: 9 harnesses now, plus CI that packages without testing |
+| 6 | Bring `UI.lua`'s `UpdateApprovalsUI` into the harness | **Not done.** `UI.lua` is loaded by `titanmenu.lua` but its windows are stubbed |
+| 7 | Add a floor between consecutive approvals | **Not done.** `ApproveMessage` still sends immediately with no spacing |
+| 8 | Test the 30-entry backlog cap | **Not done** |
+| 9 | Remove `A.lastMessages` | **RESOLVED in 0.3.0.** Zero references remain |
+| 10 | Expose `messageSpacing` and `loginCooldown` in Options | **RESOLVED in 0.3.0.** Numeric fields in Settings, preset submenus in the Titan menu, clamped through `NormalizeTiming` in both |
+| 11 | Make the review window's auto-show optional | **Not done.** `StageApproval` still calls `ShowApprovals` on every staged message |
+| 12 | Comment that `pendingMessages` holds records, not strings | **Not done.** Still uncommented |
+| 13 | Bring `Tabard.lua` into the harness | **Not done.** The only module with no harness loading it |
+| 14 | Note the profession-name fallback in README limitations | **Not done** |
+| 15 | Prune expired keys from `A.eventsSeen` | **Not done** |
+| 16 | Extract `A:CanFillRole`, reuse `fillDefaults` in `OnDefault` | **Not done.** The duplication and the shallow copy both remain |
+| 17 | Add `.luacheckrc` and `.gitattributes` | **Half resolved.** `.gitattributes` added; no `.luacheckrc` |
+
+Also resolved, from the 0.2.0 open-findings list rather than the recommendations:
+
+| 0.2.0 finding | Status |
+| --- | --- |
+| Spacing arithmetic unasserted | **RESOLVED.** `tests/timing.lua` asserts the exact computed delay for three successive sends |
+| `TitanMenu.lua` / `Broker.lua` untested | **RESOLVED.** `tests/titanmenu.lua` loads and drives both |
+| No CI | **RESOLVED for packaging.** Still absent for tests |
+
+Seven resolved (six by the 0.3.0-0.4.1 releases, one during this pass), one half-resolved,
+ten carried forward.
 
 ## Test Coverage
 
-- **Overall**: Good on the message pipeline and settings migration, absent on the three
-  frame-heavy modules. A clear improvement over 0.1.0.
-- **This rating comes from reading the harnesses, not running them.** No Lua interpreter
-  is installed on this machine — `lua5.1`, `lua`, `luajit`, `lua5.4`, and `lua54` were all
-  checked and none resolved — so none of the four suites was executed during this pass.
-- **Unit tests**: four harnesses, 207 lines. Each stubs only the globals its own path
-  touches, dies on the first failed `assert`, and prints a `PASSED` summary.
-- **Integration tests**: `tests/settings.lua` is arguably one — it loads two modules,
-  runs `A:Initialize`, and drives real widget handlers.
-- **Performance tests**: none, and not warranted.
-- **Manual verification**: the in-game checklist was revised to ten steps and now leads
-  with Verify mode, which is the right emphasis for a release whose point is the review
-  step.
+- **Overall**: Good and improving. Nine harnesses, 589 lines, covering ten of eleven
+  modules plus the XML.
+- **This rating comes from reading the harnesses, not running them.** No Lua interpreter is
+  installed on this machine — `lua5.1`, `lua`, and `luajit` were all checked and none
+  resolved — so none of the nine suites was executed during this pass. Per the project's
+  own testing rule, this is stated rather than glossed.
 
-### What `tests/verify.lua` locks down
+### Notable new coverage
 
-This is the most valuable new file in the release. It captures `C_Timer.After` callbacks
-into a list rather than running them, which lets it fire the drain timer at a chosen
-moment and assert what happens across a mode change. Thirteen assertions cover:
+**`tests/timing.lua` closes the oldest gap.** It keeps the `delay` argument that
+`verify.lua` discarded, so it can assert the queue's arithmetic precisely: first message at
+delay 0, second at 11 (spacing 12 minus 1 second elapsed), third at 1. It then exercises
+the per-member login cooldown in both directions and confirms `loginCooldown = 0` permits
+repeat greetings. The comment explaining why the third delay is 1 rather than 12 shows the
+author reasoning about `lastGuildSend` advancing inside a callback — exactly the kind of
+subtlety that needed pinning.
 
-| Invariant | Assertion |
-| --- | --- |
-| Verify mode never auto-sends | One staged entry, zero sends, review window shown once |
-| Dedup applies in Verify mode too | A repeated `login:alice` does not stage a second entry |
-| Send posts exactly one message | After approval: one send, correct text, backlog empty |
-| Dismiss never sends | Backlog empties, send count unchanged |
-| **Mode toggle cannot flush the backlog** | Switching to Automatic leaves the staged entry unsent and still pending |
-| An older staged entry can still be approved manually | Approval works after the mode switch |
-| Automatic mode enqueues rather than sending immediately | Entry lands in `pendingMessages`, nothing sent yet |
-| **A mode switch during the spacing delay captures the message** | Firing the drain timer after switching to Verify stages instead of sending |
-| A message cannot cross a guild boundary | After the guild changes, approving discards instead of sending |
-| `ClearApprovals` empties the backlog | Asserted directly |
-| Automatic still works end to end | Final entry sends without a click |
-| The channel is always GUILD | The `SendChatMessage` stub asserts `channel == "GUILD"` on every call |
+**`tests/titanmenu.lua` is the most ambitious harness.** Beyond the widget layer it fakes
+the `MenuUtil` node API itself, building nodes that record their children, so the test can
+generate the real menu tree and then walk and invoke it. This is what makes a 127-line
+presentation module assertable offline without a client.
 
-The two bolded rows are the invariants most likely to be broken by a careless future
-refactor, and they are the ones most explicitly pinned. That is good test design.
+**`tests/voice.lua` pins the feature's safety properties, not just its happy path.** It
+asserts that a custom template containing a real item hyperlink survives translation
+untouched, that race-filtered-out accents cannot be set, that changing language resets an
+incompatible accent to `auto`, that an unknown race yields only two options, that invalid
+values are rejected, and — in a dedicated regression — that a 250-byte cut does not split a
+multibyte character.
 
-### What `tests/settings.lua` locks down
+**`tests/keybindings.lua` tests the artifact rather than a reimplementation.** It reads
+`Bindings.xml`, regex-extracts each handler body, and `load()`s it, so the real embedded
+Lua executes. It then asserts the bindings are opt-in (no `default=`), unique, and
+correctly categorised, drives all three actions, and requires the `SendChatMessage` stub to
+have been called zero times. It also covers the disabled-addon and pre-initialisation
+paths. As a side effect it loads only `Core.lua` and `Alerts.lua`, which proves the
+`CommsText` fallback works without the voice modules.
 
-A metatable-based fake widget layer makes `Options.lua` loadable offline. `CreateFrame`
-records every widget in a flat list, so the test can afterwards locate widgets by
-template name or by label text and invoke their stored `OnClick` handlers. It asserts:
-
-- a custom login template survives migration;
-- a blank join template and a whitespace-only level template are replaced by defaults;
-- a missing help template is filled from defaults;
-- `outgoingMode` defaults to `"automatic"`, preserving 0.1.0 behavior for existing users;
-- exactly two radio widgets exist and Automatic starts selected;
-- exactly four *Use default* buttons exist, one per template;
-- clicking each radio switches the mode and updates both buttons.
-
-Running `A:Initialize()` with `IsInGuild` stubbed to `false` is a thoughtful detail: it
-tests the migration without any risk of the test triggering the send path.
+**`tests/syntax.lua` and `tests/icon.lua` are cheap structural guards.** Six lines to catch
+a non-parsing file across all eleven modules; twenty-one to catch icon wiring drifting
+apart across the TOC, `Broker.lua`, `Options.lua`, and the installer.
 
 ### Remaining coverage gaps, ranked
 
-1. **`UI.lua` has no automated coverage**, and it now holds the review window — the UI
-   through which the user authorizes public messages. `tests/settings.lua` has already
-   demonstrated the technique that would reach it. `UpdateApprovalsUI`'s paging, clamping,
-   and index binding are pure logic over a list and would be straightforward to assert.
-2. **`Tabard.lua` still untested**, and still carries the suspected ordering defect
-   below. It remains the easiest of the three to bring in: two stubbable helpers and a
-   pure state machine.
-3. **`Broker.lua` untested.** Low value; it is 38 lines of string assembly and click
-   routing.
-4. **The spacing arithmetic is still unasserted.** `tests/verify.lua` fires the captured
-   timer directly, so it never checks that the computed delay equals
-   `max(3, messageSpacing)`. The stub discards the delay argument entirely.
-5. **`wipe(pendingMessages)` when `CanUse` turns false is still uncovered**, both the
-   up-front branch in `DrainQueue` and the `OnRosterEvent` guild-change branch.
-6. **`IsSelf` realm handling and the suspicious-roster-read guard** remain untested,
-   carried forward from 0.1.0.
-7. **The 30-entry backlog cap is untested.** `StageApproval` drops index 1 when full;
-   nothing asserts that the oldest is the one discarded, or that the UI indices stay
-   consistent afterwards.
+1. **`Tabard.lua` has no harness that loads it.** The only such module, and it still
+   carries the suspected ordering defect below. Two stubbable helpers and a pure state
+   machine; the easiest remaining win.
+2. **`UI.lua`'s logic is unexercised.** It is loaded by `titanmenu.lua`, but
+   `UpdateApprovalsUI`'s paging, clamping, and index binding — the authorization path for
+   public messages — are not driven. The widget technique already in the repo would reach
+   them.
+3. **The 30-entry backlog cap is untested**, including that it drops the oldest.
+4. **`wipe(pendingMessages)` when `CanUse` turns false** remains uncovered in both the
+   `DrainQueue` branch and the `OnRosterEvent` guild-change branch.
+5. **`A:IsSelf` realm handling and the suspicious-roster-read guard** remain untested,
+   carried from 0.1.0. Both are explicit anti-spam protections.
+6. **`A:ChatLimit` is tested only on a two-byte character.** A three- or four-byte
+   sequence (CJK, emoji) would exercise the loop more than one iteration deep.
+7. **The `expressive` strength branch is only partly covered.** `voice.lua` asserts the
+   flair appears; it does not assert the punctuation intensification.
+8. **No CI runs any of this.** See below.
 
 ## Code Quality Indicators
 
-- **Linting**: still not configured. No `.luacheckrc`, no formatter config. Also no
-  `.gitattributes`, which is why git reports LF-to-CRLF normalization warnings on all
-  seven modified files.
-- **Code Style**: consistent, and the new code matches the established conventions. The
-  four new `Core.lua` methods follow the `function A:Name()` form with early-return
-  guards; the new UI methods mirror the existing build/update/show triple exactly; the
-  new `outgoingMode` closure sits alongside `section`, `toggle`, and `template` in the
-  same style. Still 12 `local function` definitions and no new globals beyond the one new
-  named frame.
-- **Documentation**: good, and kept in step with the code. The README gained a dedicated
-  "Automatic versus Verify mode" section that states the non-obvious rules explicitly —
-  including that switching back to Automatic does not release pending items, and that
-  switching to Verify captures an in-flight message. The limitations section was updated
-  rather than left stale. New code comments explain *why*: "Never approve messages merely
-  by toggling the mode to Automatic: an explicit approval remains explicit" and "The Send
-  button is the actual user confirmation. Do not schedule a delayed automatic send after
-  a click."
-- **Error handling**: good. `pcall` still wraps the one call that can fail. The new
-  methods all guard their inputs (`if not entry`, `if not self.pendingApprovals[index]`)
-  and re-check `CanUse` at the moment of action rather than trusting an earlier check.
-- **Global hygiene**: good. One new named frame (`FGCApprovalsFrame`), bringing the total
-  to four. No new namespace globals.
-- **Control flow**: good. The new `DrainQueue` body nests one level deeper than before
-  (`if entry and CanUse` then `if sameGuild` then the mode branch), which is the deepest
-  point in the file but still readable.
+- **Linting**: still not configured. No `.luacheckrc`. `.gitattributes` now pins LF, which
+  removed the CRLF churn git had been warning about.
+- **Code Style**: consistent, and the four new modules match the house conventions
+  precisely — `local _, A = ...` headers, `function A:Name()` methods, file-local helpers
+  kept local, early-return guards, 4-space indentation, compact `{key=value}` data tables.
+  The 29 `register(...)` calls in `Accents.lua` exceed the ~100-character guideline
+  substantially, but as uniform single-line data records they are more readable this way
+  than wrapped; a defensible deviation.
+- **Documentation**: good and genuinely maintained. The README grew 80 lines covering
+  keybindings, the two sending modes, timing controls, and the languages feature, with a
+  revised 10-step in-game checklist. `PACKAGING.md` documents the release process.
+  Comments continue to explain *why*: the load-order note on `Languages.lua`'s English
+  entry, the asynchronous-panel reason for the deferred scroll, the "editing a template
+  always wins" rationale, the "don't prepend an interjection to `[LFG]`" note, the
+  Skyborne-token caveat, and the "Bindings.xml must not be in the TOC" comment in two
+  places.
+- **Error handling**: good. `pcall` still wraps the one failing call. `NormalizeTiming`
+  explicitly handles NaN and both infinities. `GetPlayerRace` falls through three
+  candidates to `"Unknown"`. `OpenTitanMenu` substitutes `UIParent` for a malformed owner.
+  Data-table reads in `RaceProfiles.lua` are all written defensively as
+  `(self.table or {})`.
+- **Global hygiene**: good. Four new `BINDING_*` globals, which the client's Key Bindings
+  UI requires and for which no alternative exists. No new frames, no new namespace
+  globals.
+- **Control flow**: good. `A:SetOption` and `A:SetVoiceOption` are flat dispatch chains.
+  `A:VoiceText` is the densest new function but reads top-to-bottom as a precedence
+  ladder.
 
-### Observation: the new code fails safe at every branch
+### Observation: the voice layer was built to be unable to cause harm
 
-Worth recording because it is the clearest signal of intent in the release. Every edge
-case introduced by the mode feature resolves toward *not sending*:
+Worth recording, because it is the clearest design signal in these three releases. The
+highest-risk thing a message-rewriting feature could do is corrupt text a user authored —
+breaking an item link, mangling a name, or altering intent. Every structural choice
+forecloses that:
 
-| Situation | Resolution |
+| Choice | Effect |
 | --- | --- |
-| Unrecognized persisted mode value | Coerced to `"automatic"`, the documented default, rather than left undefined |
-| Mode switched to Verify mid-flight | Message staged, not posted |
-| Mode switched to Automatic with a backlog | Backlog untouched; a console note points at `/fgc verify` |
-| Guild changed before the drain timer fires | Entry silently discarded |
-| Guild changed before an approval click | Entry discarded with an explanatory message |
-| `CanUse` false at drain time | Entry dropped |
-| `CanUse` false at approval time | Refused with a printed reason |
-| Backlog at capacity | Oldest *unsent* entry dropped, rather than flushing anything |
-| Template blanked by the user | Empty message rejected by `QueueGuild` before it can consume a cooldown key |
+| Whole-phrase substitution, never transformation | No regex ever runs over user text to "add an accent" |
+| Customized template wins outright | A template that differs from the default is formatted verbatim and returned before any voice logic executes |
+| Only four built-in templates are in scope | Nothing else the addon or player writes is reachable |
+| No global chat hooks | Stated in the module header and true in the code |
+| Flair never applied to `help` | An `[LFG]` line is never prefixed with an interjection |
+| Defaults reproduce prior output exactly | English, accent `none` — upgrading changes nothing |
+| Per-character storage | One character's RP voice cannot leak into another's |
+| Encoding-aware truncation added alongside | The feature that introduced multibyte text also fixed the truncation that would have split it |
+
+`tests/voice.lua` asserts the second row with a real `|cff00ff00|Hitem:1|h[Linen Bag]|h|r`
+link, which is the right way to pin it.
 
 ## Technical Debt
 
-### New in 0.2.0
+### New in this span
 
-#### `OnDefault` resets the outgoing mode without the warning its sibling prints
-`Options.lua`'s restore-defaults handler copies all of `A.defaults` over `A.db`, which
-now includes `outgoingMode`. A user in Verify mode who clicks Restore Defaults is
-silently switched to Automatic, after which future greetings post without review.
+#### `OnDefault`'s blast radius widened without a warning being added
+Previously flagged for silently resetting `outgoingMode`. It now *also* resets all four
+per-character voice settings from `A.voiceDefaults`. So a Restore Defaults click moves a
+player from Verify back to Automatic *and* discards their language and accent choices, with
+no confirmation and no printed note — while the radio button's own handler does print a
+reminder for the mode change. The recommendation stands and has grown slightly more
+valuable.
 
-The radio button's own `OnClick` prints a note when switching to Automatic with a
-non-empty backlog; `OnDefault` performs the same switch with no note. The behavior is
-also safe in the important respect — already-staged messages are not released, since
-`OnDefault` does not touch `pendingApprovals` — but the inconsistency is worth closing,
-either by printing the same note or by preserving the mode across a defaults restore.
-Given that this setting governs whether the addon speaks publicly without the user
-present, preserving it is arguably the better choice.
+#### A duplicated line in `OnDefault`
+`if A.UpdateRequestPreview then A:UpdateRequestPreview() end` appears twice in the same
+function, once before and once after the broker update. Harmless, but it is the kind of
+artifact that suggests the function was edited twice without re-reading.
 
-#### The shallow copy in `OnDefault` is now closer to mattering
-The handler copies one level deep. That is still correct for the current shape, where
-`templates` is the only nested table and it is flat. But `A.defaults` gained a key this
-release, and the pattern will silently break the first time a default is nested two
-levels. `fillDefaults` already recurses properly and could be reused.
+#### `subtle` strength applies no flair at all
+The three strengths are `subtle`, `moderate`, and `expressive`, and `subtle` is the
+default. Reading `A:VoiceText`, the flair prefix is applied only for `moderate` and
+`expressive`; `subtle` gets the style's phrasing with no prefix. That is a reasonable
+design, but the label implies a light touch rather than none, and a player selecting
+"Subtle" after seeing "Expressive" may reasonably expect a reduced flourish rather than
+its complete absence. Worth a word in the options hint.
 
-#### No rate limit on approvals
-`ApproveMessage` calls `SendGuild` directly with no spacing and no cooldown of its own.
-A user with four rows visible can click Send four times in quick succession and post four
-messages back to back, with none of the `max(3, messageSpacing)` protection the automatic
-path enforces.
+#### `moderate` and `expressive` differ only in terminal punctuation
+Both prepend the same flair string. `expressive` additionally doubles a trailing `!` or
+converts a trailing `.` to `!`. The distinction is real but very small, and the code comment
+("A stronger flourish without repeating the catchphrase") reads as if more was intended.
+Either is fine; it is worth knowing the two levels are nearly identical in effect.
 
-This looks deliberate: the README states that "Messages sent via deliberate Send clicks
-are not delayed", and the code comments that the click is the confirmation. The precedent
-is `SendHelpRequest`, which also bypasses the queue — but that one still imposes a
-20-second self-limit, so the asymmetry is real. Since the user is present and clicking,
-this is a far smaller risk than unattended spam, but a modest floor (even one second)
-would close the gap without harming the experience.
+#### Packaging is automated but testing is not
+`.github/workflows/package.yml` fires on a `v*` tag and publishes a release. Nothing in CI
+runs the nine harnesses or checks that the three version strings agree. A tag therefore
+cuts a release with no automated verification whatsoever. Since the harnesses are pure Lua
+with no dependencies beyond an interpreter, a test job would be a handful of lines and
+would convert the existing suite from "run when remembered" to "enforced".
 
-#### `ShowApprovals` is called on every staged message
-`StageApproval` ends with `if self.ShowApprovals then self:ShowApprovals() end`, so the
-review window re-shows each time a new message is staged. With several guildmates logging
-in during a busy evening this will surface the window repeatedly, possibly over whatever
-the player is doing. The README documents it ("The popup appears as new review items are
-created"), so it is intentional, and a user who wants quiet can choose Automatic. Still,
-an option to suppress the auto-show, or showing only on the first staged entry while the
-window is closed, would be a reasonable refinement.
+#### `.pkgmeta` retention of `Bindings.xml` is unasserted
+`Bindings.xml` must reach users but cannot be in the TOC. Two mechanisms carry it: the
+installer appends it explicitly and fails if absent, and `.pkgmeta` simply does not exclude
+it. `tests/icon.lua` checks the installer path for the icon, and `tests/keybindings.lua`
+checks the XML's content, but nothing asserts that `.pkgmeta` still includes
+`Bindings.xml`. A future exclusion added to `.pkgmeta` would silently ship an addon with no
+bindings via the automated channel while the manual installer kept working — an
+asymmetric failure that would be hard to diagnose.
 
-#### Row index binding depends on an undocumented discipline
-Approval rows capture `row.entryIndex` during `UpdateApprovalsUI`, and the Send and
-Dismiss handlers pass that stored index to `ApproveMessage` / `DismissMessage`. Because
-the backlog shifts whenever an entry is removed — and whenever the 30-cap drops index 1 —
-a stale index would act on the *wrong message*, which is precisely the product's worst
-failure mode.
+#### README section ordering
+The keybindings section was inserted between the `# Forever Guild Comms 0.4.1-beta` title
+and the `WoW: Forever 1.60.1 / Interface 16001 addon by Michael Reilly.` byline, leaving
+the byline orphaned beneath a long block. Cosmetic, but the README is explicitly treated as
+part of the deliverable.
 
-In the current code this is safe: every mutation path calls `UpdateApprovalsUI`, which
-re-binds all four rows, and WoW's Lua is single-threaded so a click handler cannot
-interleave with an event handler mid-function. The risk is not a present defect but a
-fragile invariant — the safety depends on every future mutation path remembering to
-refresh. Keying rows by a monotonic entry id instead of a positional index would make the
-binding robust by construction. Worth a comment at minimum.
+### Carried forward unchanged
 
-#### The queue contract changed without a compatibility note
-`A.pendingMessages` holds records now, not strings. Nothing in the current codebase reads
-it expecting a string, and `tests/smoke.lua` is unaffected because it stubs `QueueGuild`
-entirely. But this is the kind of silent contract change that is easy to trip over later,
-and it is not mentioned in any comment.
-
-#### `.kiro/steering/testing.md` is now out of date
-The steering document still says only `Core.lua`, `Roster.lua`, and `Alerts.lua` are
-loadable offline and that `Options.lua` must be tested in game — which
-`tests/settings.lua` disproves. It also documents only `tests/smoke.lua` and gives a
-single run command, with no mention of the three new harnesses. Since the steering files
-are what guide future work on this project, a stale one actively misdirects. This is the
-highest-value documentation fix in the list.
-
-### Carried forward unchanged from 0.1.0
-
-- **`A.lastMessages`** is still declared and still referenced nowhere. Safe to remove.
-- **`messageSpacing` and `loginCooldown` still have no UI control**, despite both being
-  consumed by code. Reaching them still requires hand-editing SavedVariables. The new
-  options text now refers to automatic messages being "rate-limited" without saying by
-  how much, which is accurate but leaves the user unable to see or change the value.
-- **`A.eventsSeen` is never pruned.** Unchanged, and Verify mode does not add keys beyond
-  what Automatic already created.
-- **The tabard initial-check ordering issue.** `Tabard.lua` was not modified, so the
-  analysis stands: the 1.2-second debounced check from `PLAYER_ENTERING_WORLD` populates
-  `A.wasInCity` before the 3-second `CheckTabard(true)` runs, so the latter sees no
-  transition and returns early, and the login-time prompt likely never fires. Still
+- **`A.eventsSeen` is never pruned.** Three references, no sweep. Bounded by session length.
+- **The tabard initial-check ordering issue.** `Tabard.lua` is byte-identical to 0.1.0, so
+  the analysis stands: the 1.2-second debounced check from `PLAYER_ENTERING_WORLD`
+  populates `A.wasInCity` before the 3-second `CheckTabard(true)` runs, so the latter sees
+  no transition and returns early, and the login-time prompt likely never fires. Still
   inferred from source and still **not verified in a live client**.
-- **The profession-name fallback** in `ScanRecipes` still collapses all professions into
-  one `"Current Profession"` bucket when the skill-line APIs are missing, so each scan
-  overwrites the last. Still worth a README note.
-- **`A.GetActivityType`** is still a dot-called closure rather than a `function A:`
-  method, the one place the module pattern is not followed.
-- **No CI.** With four harnesses, the manual pre-release checklist now has more steps to
-  get wrong, not fewer.
+- **The profession-name fallback** in `ScanRecipes` still collapses every profession into a
+  single `"Current Profession"` bucket when the skill-line APIs are missing. Still
+  undocumented in the README limitations.
+- **`A.GetActivityType`** is still a dot-called closure rather than a `function A:` method —
+  the one place the module pattern is not followed.
+- **Positional approval-row binding.** `row.entryIndex` is captured at refresh and passed to
+  `ApproveMessage`. Safe today because every mutation path refreshes the UI and WoW's Lua is
+  single-threaded, but the invariant is undocumented and its failure mode is sending the
+  wrong message.
+- **No rate limit on approvals.** Four visible rows can be clicked in rapid succession,
+  producing back-to-back guild posts with none of the automatic path's spacing. Documented
+  as intentional in the README; still asymmetric with `SendHelpRequest`'s 20-second limit.
+- **`ShowApprovals` on every staged message.** The review window re-shows each time a
+  message is staged.
+- **`OnDefault` shallow copy.** One level deep. Correct for the current shape; `fillDefaults`
+  already recurses and could be reused.
+- **Duplicated role-availability logic**, `(self.classRoles[self.playerClass] or {})[role]`
+  in both `A:Initialize` and `BuildRequestUI`.
+- **`pendingMessages` holds records, not strings**, still without a comment saying so.
+- **No `.luacheckrc`.**
+
+### Resolved, with credit
+
+- **`A.lastMessages` removed** in 0.3.0 — dead state flagged in two consecutive passes.
+- **`messageSpacing` and `loginCooldown` are now reachable**, with validated limits, from
+  both UIs. This was arguably the most user-visible of the carried findings.
+- **The spacing arithmetic is now asserted** by `tests/timing.lua`.
+- **`TitanMenu.lua` and `Broker.lua` are now covered** by `tests/titanmenu.lua`.
+- **`.gitattributes` added**, and the LF/CRLF churn is gone.
+- **CI exists** for packaging.
 
 ## Patterns and Anti-patterns
 
 ### Good Patterns
 
-Carried forward and still intact: the single outbound chat path; the single event
-dispatcher; baseline-first roster diffing; layered independent guards; defense in depth
-where two events describe one fact; cheap gate before expensive match; type-checking
-external data; feature detection everywhere; debounce via timer plus boolean latch;
-forward-compatible SavedVariables; properly escaped localized globals; conservative
-identity normalization; the private/public boundary; no automation of player actions;
-honest documentation.
+Carried forward and intact: single outbound chat path; single event dispatcher; baseline-first
+roster diffing; layered independent guards; defense in depth where two events describe one
+fact; cheap gate before expensive match; type-checking external data; feature detection
+everywhere; debounce via timer plus latch; forward-compatible SavedVariables; escaped
+localized globals; conservative identity normalization; the private/public boundary; no
+automation of player actions; late-bound delivery; identity-bound message records;
+asymmetric mode transitions; fail-safe setting normalization; honest documentation.
 
-New in 0.2.0:
+New and worth naming:
 
-- **Late-bound delivery decision.** Reading `outgoingMode` again inside the drain timer,
-  rather than only at composition time, is what makes a mid-flight mode change do the
-  right thing. This is a small design choice with a large safety payoff, and it is
-  explicitly tested.
-- **Identity-bound message records.** Stamping each entry with the guild it was composed
-  in, then re-verifying at both delivery points, closes a cross-guild leak that the
-  0.1.0 `wipe(pendingMessages)` approach could only handle for messages still in the
-  queue. Staged messages can now outlive a queue flush and are still protected.
-- **Asymmetric mode transitions.** Automatic-to-Verify captures in-flight messages;
-  Verify-to-Automatic does not release staged ones. Treating the two directions
-  differently is correct precisely because they carry different risk, and both halves are
-  asserted in tests.
-- **Fail-safe setting normalization.** Coercing an unrecognized `outgoingMode` to
-  `"automatic"` on load means a corrupted profile cannot leave delivery in an undefined
-  state.
-- **Dedup before the mode branch.** Verify mode inherits full duplicate protection for
-  free, so the review window cannot be flooded with repeats.
-- **Tests that pin the non-obvious rules.** The two hardest-to-reason-about behaviors in
-  the feature are exactly the two with the most pointed assertions.
-- **A compile-only smoke check.** `tests/syntax.lua` is six lines and catches the single
-  most embarrassing possible regression — shipping a file that does not parse. Cheap,
-  and it covers all seven modules including the three nothing else loads.
-- **Synthetic widget layer for offline UI testing.** A genuinely useful technique that
-  moved a module out of the "in-game only" bucket, and that generalizes to `UI.lua`.
+- **One validating setter per scope.** `A:SetOption` and `A:SetVoiceOption` are the only
+  writers, and both configuration UIs go through them. This is why a Titan preset and a
+  Settings edit box cannot disagree, and why clamping is unconditional. The explicit refusal
+  of template keys in `SetOption` — rather than an omission — is the detail that makes it
+  airtight.
+- **Optional layer behind a one-line indirection.** `A:CommsText` makes 234 lines of voice
+  feature removable, and a harness that omits those modules proves the fallback.
+- **Pure data modules.** Adding a language or style is a data edit. `accentOrder` gives
+  deterministic presentation independent of table iteration order, which also makes the
+  menu and Settings lists stable between sessions.
+- **Self-healing dependent selections.** A stored accent that becomes incompatible reverts
+  to `auto` rather than being used invisibly, at both write time and load time.
+- **Encoding-aware truncation introduced with the feature that needed it**, plus a
+  regression test. The sequencing matters: the limit was fixed in the same release that
+  made multibyte text possible.
+- **Declarative input funnelled through one dispatcher.** The key bindings added a third
+  input surface and *removed* duplication, because `TitanMenu.lua` was refactored onto
+  `RunQuickAction` in the same change.
+- **Honest return values.** `ScanRecipes` returning a boolean replaced an unconditional
+  optimistic message with accurate feedback. Small change, real UX improvement.
+- **Testing the artifact, not a copy.** `keybindings.lua` loads the real XML and executes
+  the real handlers; `icon.lua` reads the real TOC and installer. Both resist the classic
+  failure where a test mirrors the implementation and both drift together.
+- **Declining a convenient dependency.** The nested menu used Blizzard's `MenuUtil` rather
+  than Titan's menu library, preserving the no-hard-dependency policy at the exact moment it
+  was under pressure.
 
 ### Anti-patterns
 
-- **Positional index binding between a UI row and a mutable list**, as described above.
-- **A safety-relevant setting reset by a generic defaults handler** without the warning
-  its dedicated control prints.
-- **Dead state left in place** (`A.lastMessages`), now one release older.
-- **Settings that exist in code but not in the UI** (`messageSpacing`, `loginCooldown`),
-  now one release older.
-- **Duplicated role-availability logic**, `(self.classRoles[self.playerClass] or {})[role]`
-  in both `A:Initialize` and `BuildRequestUI`. Unchanged.
-- **A stale steering document** that contradicts the code it is meant to guide.
-- **Unpruned cache** (`A.eventsSeen`). Unchanged.
+- **A generic defaults handler resetting safety-relevant and per-character state** without
+  the warning its dedicated control prints.
+- **A duplicated statement** in `OnDefault`.
+- **Positional index binding between a UI row and a mutable list.**
+- **An unasserted packaging invariant** (`.pkgmeta` retaining `Bindings.xml`).
+- **Automated release with no automated verification.**
+- ~~**A steering document that contradicts the code it governs.**~~ Resolved during this
+  pass; `testing.md` now matches the nine-harness reality.
+- **Unpruned cache** (`A.eventsSeen`).
+- **Duplicated role-availability logic.**
 
 ## Security Posture
 
-Unchanged and still sound. No network surface, no credential handling, no file I/O
-outside SavedVariables, no `loadstring`, no dynamic code loading, no addon-to-addon
+Unchanged and still sound. No network surface, no credential handling, no file I/O outside
+SavedVariables, no `loadstring` in shipped code, no dynamic code loading, no addon-to-addon
 messaging. All gear, invite, and targeting actions remain in the player's hands, so no
 protected function is called from a tainted path.
 
-The new feature slightly *improves* the posture in one respect: Verify mode gives the
-user a way to run the addon with zero unattended public output while keeping every
-private feature, which is a meaningful option for anyone cautious about an addon speaking
-in their guild.
+Three observations specific to this span:
 
-User-supplied template text is now clamped at four points rather than three — `A:Format`,
-the `QueueGuild` entry builder, `A:SendGuild`, and `SetMaxLetters` on the edit boxes —
-and is still only ever used as a chat payload, never as code or as a pattern. The one
-place user-influenced text becomes a Lua pattern remains `OnSystemGuildJoin`, whose input
-is a Blizzard global with its metacharacters escaped.
+- **The voice layer does not widen the attack surface.** It substitutes from static tables
+  and never compiles, evaluates, or pattern-matches user text. The one place user-influenced
+  text becomes a Lua pattern is still `OnSystemGuildJoin`, whose input is a Blizzard global
+  with its metacharacters escaped.
+- **`Bindings.xml` embeds Lua that the client executes.** This is the standard mechanism and
+  the content is static, guarded, and limited to a single dispatcher call. Note that
+  `tests/keybindings.lua` uses `load()` on that content — appropriate in a test, and it is
+  worth keeping that confined to tests.
+- **The installer validates its manifest.** `Get-InstallManifest` rejects any TOC entry that
+  is not a bare `[A-Za-z0-9_-]+\.(lua|xml)` filename, explicitly blocking paths, traversal,
+  and unexpected extensions. For a script that copies files into a game directory, that is
+  the right instinct.
+- **CI permissions are minimal.** `contents: write` is what attaching a release asset
+  requires, and the optional third-party tokens are inert when unset.
 
 ## Recommendations
 
-Ordered by value relative to effort. Items marked *carried* were in the 0.1.0 list.
+Ordered by value relative to effort. *(carried)* marks items from the 0.2.0 list.
 
 | # | Recommendation | Effort | Rationale |
 | --- | --- | --- | --- |
-| 1 | Update `.kiro/steering/testing.md` to describe all four harnesses and drop the claim that `Options.lua` cannot be tested offline | Trivial | A stale steering file misdirects every future change; the code has already outrun it |
-| 2 | Make `OnDefault` either preserve `outgoingMode` or print the same warning the radio prints | Trivial | A defaults restore should not quietly re-enable unattended public messaging |
-| 3 | Key approval rows by a monotonic entry id rather than a list position | Low | Removes a fragile invariant whose failure mode is sending the wrong message |
-| 4 | Verify the tabard initial-check ordering in game, then fix if confirmed *(carried)* | Low | A documented feature probably never fires on login |
-| 5 | Add a single runner script that executes all four harnesses and checks the three version strings agree | Low | Four harnesses and a three-place version rule is more manual pre-release work than before |
-| 6 | Bring `UI.lua`'s `UpdateApprovalsUI` into the harness using the `settings.lua` widget technique | Medium | The review window is now part of the authorization path for public messages |
-| 7 | Add a modest floor between consecutive approvals | Low | Closes the one spacing gap, consistent with `SendHelpRequest`'s existing self-limit |
-| 8 | Test the 30-entry backlog cap, and that it drops the oldest | Low | Untested bound on a safety-relevant list |
-| 9 | Remove `A.lastMessages` *(carried)* | Trivial | Dead state, two releases running |
-| 10 | Expose `messageSpacing` and `loginCooldown` in Options *(carried)* | Low | Closes the gap between documented and reachable configuration |
-| 11 | Make the review window's auto-show optional, or show only when it is closed and the backlog was empty | Low | Repeated popups during a busy login period will annoy |
-| 12 | Add a comment noting that `pendingMessages` holds records, not strings | Trivial | Prevents a future contract trip-up |
-| 13 | Bring `Tabard.lua` into the harness *(carried)* | Medium | Pure state machine behind two stubbable helpers |
-| 14 | Note the profession-name fallback degradation in the README limitations *(carried)* | Trivial | A silent narrowing of craft alerts that is hard to attribute |
-| 15 | Prune expired keys from `A.eventsSeen` *(carried)* | Low | Bounds session growth |
-| 16 | Extract `A:CanFillRole(role)` and reuse `fillDefaults` in `OnDefault` *(carried)* | Low | Removes duplicated logic and a latent shallow-copy issue |
-| 17 | Add a `.luacheckrc` and a `.gitattributes` *(partly carried)* | Low | Would catch dead state and accidental globals automatically; would also stop the LF/CRLF churn git is warning about |
+| ~~1~~ | ~~Update `.kiro/steering/testing.md`~~ *(carried, was #1)* | Trivial | **Done during this pass.** Now documents all nine harnesses and their coverage, states that CI packages but does not test, replaces the offline claim with a per-module breakdown identifying `Tabard.lua` as the only uncovered module, and extends the in-game checklist to 14 steps plus a pre-tag gate |
+| 1 | Add a test job to `package.yml`, or a local runner script, that runs all nine harnesses and verifies the three version strings agree *(carried, was #5)* | Low | **Now the top item.** A tag currently publishes a release with zero automated verification. The suite is pure Lua with no dependencies, and `testing.md` now documents the exact commands a runner would wrap |
+| 3 | Make `OnDefault` preserve `outgoingMode` and voice settings, or print the same warning the radio prints *(carried, was #2)* | Trivial | Restore Defaults silently re-enables unattended public messaging and discards language choices |
+| 4 | Assert in a harness that `.pkgmeta` does not exclude `Bindings.xml` | Trivial | Prevents an asymmetric failure where the automated channel ships without keybindings and the installer does not |
+| 5 | Bring `Tabard.lua` into the harness *(carried, was #13)* | Low | The only module no harness loads; pure state machine behind two stubbable helpers |
+| 6 | Verify the tabard initial-check ordering in game, then fix if confirmed *(carried, was #4)* | Low | A documented feature probably never fires on login |
+| 7 | Key approval rows by a monotonic entry id *(carried, was #3)* | Low | Removes a fragile undocumented invariant whose failure mode is sending the wrong message |
+| 8 | Remove the duplicated `UpdateRequestPreview` line in `OnDefault` | Trivial | Obvious editing artifact |
+| 9 | Drive `UpdateApprovalsUI` in a harness *(carried, was #6)* | Medium | The review window is part of the authorization path for public messages |
+| 10 | Clarify in the options hint that Subtle applies no flair prefix | Trivial | The label implies a light touch, not absence |
+| 11 | Test the backlog cap, a 3-4 byte `ChatLimit` case, and the `expressive` punctuation branch *(partly carried, was #8)* | Low | Three small gaps in otherwise strong coverage |
+| 12 | Add a modest floor between consecutive approvals *(carried, was #7)* | Low | Closes the one spacing gap; consistent with `SendHelpRequest` |
+| 13 | Add `.luacheckrc` *(carried, was #17)* | Low | Would have caught the duplicated line and would guard against accidental globals |
+| 14 | Make the review window's auto-show optional *(carried, was #11)* | Low | Repeated popups during a busy login period |
+| 15 | Comment that `pendingMessages` holds records *(carried, was #12)* | Trivial | Prevents a contract trip-up |
+| 16 | Note the profession-name fallback in README limitations *(carried, was #14)* | Trivial | A silent narrowing of craft alerts that is hard to attribute |
+| 17 | Move the README keybindings section below the byline | Trivial | The byline is currently orphaned |
+| 18 | Prune expired keys from `A.eventsSeen` *(carried, was #15)* | Low | Bounds session growth |
+| 19 | Extract `A:CanFillRole`, reuse `fillDefaults` in `OnDefault` *(carried, was #16)* | Low | Removes duplication and a latent shallow-copy issue |
 
-None of these are blocking. The release improves on 0.1.0 in exactly the dimension that
-matters most for this product, and it did so with tests. The most valuable follow-ups are
-the two trivial ones at the top: the steering file and `OnDefault`.
+None are blocking. The trajectory across four releases is good: each one closed real
+findings from the prior review while adding features that extended the safety model rather
+than straining it.
+
+With `testing.md` corrected, the remaining top item is the other half of the same problem:
+the project now has an accurate, documented nine-harness suite and a release pipeline that
+does not run it. Wiring the two together is the highest-value change left on this list.

@@ -103,12 +103,9 @@ function A:PopulateTitanMenu(root)
     quick:CreateButton("Review pending messages (" .. #self.pendingApprovals .. ")",
         function() A:ShowApprovals() end)
     quick:CreateButton("Show private alerts (" .. #self.alerts .. ")",
-        function() A:ShowAlerts() end)
-    quick:CreateButton("Ask guild for help...", function() A:ShowRequest() end)
-    quick:CreateButton("Rescan open profession", function()
-        if A.ScanRecipes then A:ScanRecipes() end
-        A:Print("Current open profession scanned, if available. /fgc recipes shows the count.")
-    end)
+        function() A:RunQuickAction("alerts") end)
+    quick:CreateButton("Ask guild for help...", function() A:RunQuickAction("help") end)
+    quick:CreateButton("Rescan open profession", function() A:RunQuickAction("rescan") end)
 
     root:CreateDivider()
     root:CreateButton("Edit custom messages in Settings...", function() A:OpenSettings("messages") end)

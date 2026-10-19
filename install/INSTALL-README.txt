@@ -1,4 +1,4 @@
-FOREVER GUILD COMMS 0.4.0-beta - Integrated Windows Installer
+FOREVER GUILD COMMS 0.4.1-beta - Integrated Windows Installer
 ============================================================
 
 START HERE: after Extract All, open ForeverGuildComms\install and double-click Install-ForeverGuildComms.cmd.
@@ -18,9 +18,10 @@ INSTALL / UPDATE
    You may also select the Interface or Interface\AddOns folder.
 5. After success, restart WoW Forever or type /reload in the game.
 
-The installer copies ONLY ForeverGuildComms.toc, the Lua/XML files listed
-in that manifest, and the in-game icon Media\Icon.tga. Identical files are skipped. The README, tests, and
-install subfolder are NOT copied into the live AddOns folder.
+The installer copies ONLY ForeverGuildComms.toc, the loadable Lua files
+listed in that manifest, the separately auto-loaded Bindings.xml, and the
+in-game icon Media\Icon.tga. Identical files are skipped. README, tests,
+and installer files are NOT copied into the live AddOns folder.
 
 Updated files are backed up under:
     <WoW client>\Interface\AddOnBackups\ForeverGuildComms-<timestamp>
@@ -46,7 +47,7 @@ If execution policy is enforced by your workplace or school via Group
 Policy, even the process-only override may be blocked. Do not attempt to
 circumvent an enforced policy. Install manually instead:
     a. Open the extracted ForeverGuildComms folder (one level above install).
-    b. Copy the .toc and .lua files, plus the Media\Icon.tga texture, into:
+    b. Copy the .toc, .lua files, Bindings.xml and Media\Icon.tga into:
        <WoW client>\Interface\AddOns\ForeverGuildComms
        Create the Media subfolder as well if needed. You can overwrite older addon files.
     c. Leave your SavedVariables folder alone. Restart WoW or type /reload.
@@ -58,3 +59,8 @@ request elevated permissions.
 PACKAGER NOTE
 The BigWigsMods/packager output omits this install/ directory on purpose.
 This integrated installer is available in the manually supplied source ZIP.
+
+KEY BINDINGS
+In WoW open Options > Key Bindings > AddOns > Forever Guild Comms.
+Assign keys to Open guild alerts, Ask guild for help, or Rescan open profession.
+No keys are assigned automatically. The rescan requires a profession window open.

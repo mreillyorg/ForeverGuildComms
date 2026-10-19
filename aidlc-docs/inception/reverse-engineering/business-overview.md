@@ -1,185 +1,228 @@
 # Business Overview
 
-**Analysis target**: Forever Guild Comms **0.2.0-beta**
-**Supersedes**: the 0.1.0-beta pass of 2026-10-18
+**Analysis target**: Forever Guild Comms **0.4.1-beta**
+**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
+**Releases covered since**: 0.3.0 (Titan nested menu, timing controls), 0.4.0 (languages
+and accents), 0.4.1 (opt-in key bindings)
 
 ## Business Context Diagram
 
 ```mermaid
 flowchart LR
     Player["Player<br/>addon owner"]
-    Guildmates["Guildmates<br/>other characters"]
+    Guildmates["Guildmates"]
     Addon["Forever Guild Comms<br/>in-client addon"]
-    Review["Review Window<br/>private, click to send"]
-    GuildChat["Guild Chat Channel<br/>shared social space"]
+    Voice["Voice layer<br/>language and accent"]
+    Review["Review window<br/>private, click to send"]
+    GuildChat["Guild Chat Channel"]
     Client["WoW Forever Client<br/>1.60.1 API"]
     Titan["Titan Panel<br/>optional"]
+    Keys["Key Bindings<br/>opt-in hotkeys"]
 
-    Player -->|"configures, clicks buttons"| Addon
+    Player -->|"Settings, Titan menu, hotkeys"| Addon
+    Keys -->|"quick actions"| Addon
     Addon -->|"private alerts, popups, windows"| Player
-    Addon -->|"verify mode: stage for approval"| Review
+    Addon -->|"built-in templates only"| Voice
+    Voice -->|"translated or styled text"| Addon
+    Addon -->|"verify mode: stage"| Review
     Review -->|"Send click"| GuildChat
     Review -->|"Dismiss click"| Player
     Addon -->|"automatic mode: queued send"| GuildChat
-    GuildChat -->|"CHAT_MSG_GUILD messages"| Addon
-    Client -->|"roster, zone, recipe, item events"| Addon
-    Guildmates -->|"login, join, level up, post requests"| Client
-    Addon -.->|"optional status indicator"| Titan
+    GuildChat -->|"CHAT_MSG_GUILD"| Addon
+    Client -->|"roster, zone, recipe, race, item"| Addon
+    Guildmates -->|"act in the world"| Client
+    Addon -.->|"status and nested menu"| Titan
 ```
 
 ### Text Alternative
 
 ```
-Player               -> configures and clicks   -> Addon
-Addon                -> private alerts, popups  -> Player
-Addon                -> stage (verify mode)     -> Review Window
-Review Window        -> Send click              -> Guild Chat Channel
-Review Window        -> Dismiss click           -> discarded, nothing sent
-Addon                -> queued send (auto mode) -> Guild Chat Channel
-Guild Chat Channel   -> incoming guild messages -> Addon
-WoW Forever Client   -> roster/zone/recipe data -> Addon
-Guildmates           -> act in the world        -> WoW Forever Client
-Addon                -> optional indicator      -> Titan Panel
+Player / Key Bindings / Titan menu -> Addon
+Addon -> built-in templates only    -> Voice layer (language + accent)
+Voice layer -> translated or styled -> Addon
+Addon -> automatic mode             -> Guild Chat Channel
+Addon -> verify mode                -> Review window -> Send click -> Guild Chat
+                                                     -> Dismiss    -> discarded
+Guild Chat -> incoming messages     -> Addon
+Client     -> roster/zone/recipe/race data -> Addon
+Addon      -> private alerts and popups    -> Player
+Addon      -> optional status and menu     -> Titan Panel
 ```
 
 ## Business Description
 
 - **Business Description**: Forever Guild Comms is a guild social and communication
-  assistant for World of Warcraft: Forever. Its business purpose is to reduce the social
-  friction of running a guild: it notices the guild events a player would otherwise miss
-  (a member coming online, a new member joining, a member levelling up) and speaks on the
-  player's behalf in guild chat, while privately surfacing requests from guild chat that
-  the player is specifically able to answer. It is a *communication* product, not an
-  automation product: it never takes a game action for the player.
+  assistant for World of Warcraft: Forever. Its purpose is to reduce the social friction
+  of running a guild: it notices the guild events a player would otherwise miss (a member
+  coming online, a new member joining, a member levelling up) and speaks on the player's
+  behalf in guild chat, while privately surfacing requests from guild chat that the player
+  is specifically able to answer. It is a *communication* product, not an automation
+  product: it never takes a game action for the player.
 
-- **What changed in 0.2.0**: the product no longer forces a choice between "the addon
-  speaks for me" and "the addon is off". A new **outgoing mode** setting offers
-  *Automatic* (the 0.1.0 behavior, unchanged and still the default) or *Verify with a
-  click*, in which the three roster-driven messages are staged in a private review window
-  and nothing reaches guild chat until the player clicks Send on that specific message.
-  This converts the product's riskiest capability — speaking publicly without the player
-  present — into an opt-in, reviewable one.
+- **What changed across 0.3.0 to 0.4.1**: the product grew three new layers, none of which
+  altered the core safety model.
 
-- **Business Transactions**: ten transactions, up from nine.
+  **0.3.0 — control.** A nested Titan Panel menu exposes almost every setting without
+  opening the Settings page, and the two previously unreachable timing values
+  (`messageSpacing`, `loginCooldown`) became editable with validated limits. All writes now
+  funnel through one validating setter, so the two UIs cannot disagree.
+
+  **0.4.0 — voice.** The addon's own generated messages can be translated into eight
+  languages and given one of 29 curated regional or WoW-race RP styles, stored per
+  character. Crucially this applies *only* to unmodified built-in templates: the moment a
+  player edits a template, their text wins and is never rewritten.
+
+  **0.4.1 — access.** The three private quick actions became assignable hotkeys. Nothing
+  is bound by default, and no binding can send guild chat.
+
+- **Business Transactions**: thirteen, up from ten.
 
 | # | Transaction | Trigger | Outcome | Visibility |
 | --- | --- | --- | --- | --- |
-| BT-1 | Greet a returning guildmate | Roster diff shows offline to online | Automatic mode: one templated greeting queued to guild chat. Verify mode: staged for approval | Public or staged |
-| BT-2 | Welcome a new guild member | Localized guild-join system message | Automatic mode: one templated welcome queued. Verify mode: staged for approval | Public or staged |
-| BT-3 | Congratulate a level-up | Roster diff shows a higher level while online | Automatic mode: one templated congratulation queued. Verify mode: staged for approval | Public or staged |
-| BT-4 | Surface a craft request | Guild chat message matches a request phrase AND a cached known recipe | Private alert in the local chat frame and the Alerts window | Private |
-| BT-5 | Surface a group request | Guild chat message matches an LFG/LFM pattern and is not a craft request | Private alert in the local chat frame and the Alerts window | Private |
-| BT-6 | Remind about the guild tabard | Entering or leaving a capital city | A popup that can open the character panel, nothing more | Private |
-| BT-7 | Ask the guild for help | Player fills the compose window and clicks Send | Exactly one guild chat message, rate-limited to one per 20 seconds | Public, explicit |
-| BT-8 | Maintain the known-recipe cache | Opening a profession window or learning a recipe | Per-character cache of learned recipe and output names | Private |
-| BT-9 | Report guild status | `/fgc status`, the Alerts window, or the Titan tooltip | Online count, member count, alert count, pending review count, current mode | Private |
-| **BT-10** | **Review a staged message** | **Player opens the review window and clicks Send, Dismiss, or Dismiss all** | **Send posts that one message; Dismiss discards it; neither is automatic** | **Private, resolves to public only on an explicit Send** |
+| BT-1 | Greet a returning guildmate | Roster diff shows offline to online | Templated greeting, translated or styled if selected; queued or staged per mode | Public or staged |
+| BT-2 | Welcome a new guild member | Localized guild-join system message | As BT-1 | Public or staged |
+| BT-3 | Congratulate a level-up | Roster diff shows a higher level while online | As BT-1 | Public or staged |
+| BT-4 | Surface a craft request | Guild chat matches a request phrase AND a cached known recipe | Private alert | Private |
+| BT-5 | Surface a group request | Guild chat matches an LFG/LFM pattern, not a craft request | Private alert | Private |
+| BT-6 | Remind about the guild tabard | Entering or leaving a capital city | A popup that can open the character panel | Private |
+| BT-7 | Ask the guild for help | Player fills the composer and clicks Send | One guild message, rate-limited to one per 20s, localized role and activity labels | Public, explicit |
+| BT-8 | Maintain the known-recipe cache | Opening a profession window, learning a recipe, or the rescan quick action | Per-character cache; the rescan path now reports success or failure honestly | Private |
+| BT-9 | Report guild status | `/fgc status`, Alerts window, Titan tooltip | Counts, pending review depth, current mode | Private |
+| BT-10 | Review a staged message | Player clicks Send, Dismiss, or Dismiss all | Send posts that one message; Dismiss discards it | Private, resolves to public only on an explicit Send |
+| **BT-11** | **Translate or style a built-in message** | **Player selects a language, accent, race filter, and strength** | **Built-in templates are replaced with a curated translation or RP variant, per character** | **Private configuration; affects public message wording** |
+| **BT-12** | **Adjust settings from the Titan nested menu** | **Right-click the Titan broker** | **Any boolean, the outgoing mode, timing presets, and voice options change through the same validating setter as Settings** | **Private** |
+| **BT-13** | **Invoke a quick action by hotkey** | **A key the player assigned under Options > Key Bindings > AddOns** | **Opens alerts, opens the help composer, or rescans the open profession. Never sends** | **Private** |
 
-### BT-10 in detail
+### BT-11 in detail
 
-The new transaction is the reason the release exists, and its business rules are
-unusually strict:
+The voice layer is the most behaviourally subtle addition in these three releases, and its
+business rules are deliberately narrow:
 
-| Rule | Behavior |
+| Rule | Behaviour |
 | --- | --- |
-| Nothing posts without a click | Staged messages sit indefinitely. There is no timeout that auto-sends. |
-| Switching back to Automatic does not release the backlog | Messages staged under Verify must still be individually approved or dismissed. Changing the mode is not approval. |
-| Switching to Verify mid-flight captures the message | A message already waiting in the automatic spacing queue is re-routed to the review window when its timer fires, rather than being posted. |
-| A guild change voids the backlog | Staged messages are cleared on a guild change, and an approval whose recorded guild no longer matches the current guild is discarded with an explanatory message rather than sent. |
-| Dismiss never touches guild chat | Neither Dismiss nor Dismiss all can produce a message. |
-| The backlog is bounded | 30 entries. A flood drops the oldest unreviewed entry rather than growing without limit. |
+| **A customized template always wins** | `A:VoiceText` compares the stored template against the shipped default. If they differ, the player's text is formatted as-is and neither translated nor accented. This is what protects item links, colour codes, and player intent. |
+| Only four built-in templates are in scope | `login`, `join`, `level`, `help`. Nothing else the addon or the player writes is touched. |
+| No global chat hooks | Guild chat, whispers, and arbitrary text are never rewritten. The module comment states this explicitly. |
+| Per-character storage | Preferences live in `A.char.voice`, so one account can run an Orcish warrior and a Spanish-speaking mage side by side. Existing account-wide settings are untouched. |
+| Defaults preserve existing behaviour | English, accent `none`, so upgrading changes nothing a player already posts. |
+| Incompatible selections self-heal | Changing language or the race filter revalidates the chosen accent and reverts to `auto` rather than silently using a mismatched style. |
+| Unknown races degrade safely | An unrecognised race yields only `auto` and `none`, and `ResolveAccent` returns nil. |
+| Styles are flavour, not mimicry | The source states the variants are creative RP flavour, not phonetic claims about real people, and that Blizzard's invented languages are not imitated. |
 
 - **Business Dictionary** (new and changed terms marked):
 
 | Term | Meaning in this system |
 | --- | --- |
-| **Outgoing mode** *(new)* | `A.db.outgoingMode`, either `"automatic"` or `"verify"`. Governs only the three roster-driven public messages. Alerts and the manual help request are unaffected. |
-| **Staged message** *(new)* | An entry in `A.pendingApprovals`: a fully rendered message that has passed every safety guard and is waiting for an explicit Send click. It has been *composed* but not *sent*. |
-| **Approval** *(new)* | The Send click in the review window. The click is the confirmation; no delayed send is scheduled after it. |
-| **Dismiss** *(new)* | Discarding a staged message. Removes it from the backlog and sends nothing. |
-| **Message entry** *(changed)* | Queued and staged messages are now records, `{text, kind, guild, time}`, not bare strings. The `guild` field is what lets a stale message be detected and discarded after a guild change. |
-| Baseline | The first roster read after login, reload, or a guild change. It updates state and deliberately sends nothing, so the addon never greets everyone at once. |
-| Roster diff | Comparison of a fresh roster read against the retained previous read; the only source of BT-1 and BT-3. |
-| Private alert | A notification shown only to the player. Never emitted to guild chat or a whisper. |
-| Public message | Text sent to the guild chat channel. Only BT-1, BT-2, BT-3, BT-7, and an approved BT-10 produce one. |
-| Queue | The spacing mechanism that holds automatic messages and releases them at least `max(3, messageSpacing)` seconds apart. |
-| Cooldown key | A `kind:normalizedName[:detail]` string used to suppress duplicate messages within a time window. In 0.2.0 the leading `kind` segment is also parsed back out to label the message in the review window. |
-| Self-exclusion | Dropping any event whose subject is the player, checked by GUID first then normalized name. The product's headline rule is that the player's own level-up is never announced. |
-| Normalized name | A character name lowercased, trimmed, and whitespace-collapsed by `A:Key`, used for all table keys. |
-| Template | A user-editable message string with `{name}`, `{level}`, `{type}`, `{activity}`, `{myroles}`, `{needed}` placeholders, clamped to 250 characters. In 0.2.0 a blank template is replaced by its default on load, and each template has a *Use default* button. |
+| **Voice** *(new)* | The per-character combination of language, accent, race filter, and accent strength held in `A.char.voice`. |
+| **Accent / style** *(new)* | One of 29 curated whole-phrase template sets, each bound to one language, with an optional flair prefix. Covers 8 regional human voices, 13 WoW-race RP voices, and 8 regional variants of the translated languages. |
+| **Accent strength** *(new)* | `subtle`, `moderate`, or `expressive`. Subtle applies the style's phrasing with no flair prefix; moderate prepends the flair; expressive prepends it and intensifies terminal punctuation. Never applied to the `help` template. |
+| **Race filter** *(new)* | When on, restricts the accent list to styles mapped to the player's race by `A.raceAccents`, plus the regional human set when the player is Human. |
+| **Built-in template** *(new distinction)* | A template whose stored text still equals the shipped default, and is therefore eligible for translation and styling. A **customized template** is not. |
+| **Quick action** *(new)* | One of `alerts`, `help`, `rescan`, dispatched through `A:RunQuickAction` from the Titan menu or a key binding. None sends guild chat. |
+| **Timing limit** *(new)* | The clamp range for a saved timing value: `messageSpacing` 3-120s, `loginCooldown` 0-3600s. Enforced on load and on every write. |
+| Outgoing mode | `A.db.outgoingMode`, `"automatic"` or `"verify"`. Governs only BT-1, BT-2, BT-3. |
+| Staged message | An entry in `A.pendingApprovals` awaiting an explicit Send click. |
+| Message entry | A `{text, kind, guild, time}` record. The `guild` field detects a stale message after a guild change. |
+| Baseline | The first roster read after login, reload, or a guild change. Updates state, sends nothing. |
+| Private alert | Shown only to the player. Never emitted to guild chat or a whisper. |
+| Cooldown key | `kind:normalizedName[:detail]`, used for duplicate suppression and to label review rows. |
+| Self-exclusion | Dropping any event whose subject is the player, GUID first then normalized name. |
+| Template | A user-editable string with `{name}`, `{level}`, `{type}`, `{activity}`, `{myroles}`, `{needed}` placeholders, clamped to 250 **bytes** on a UTF-8 character boundary. |
 
 ### Dominant Business Constraint
 
-The product's risk model, recorded in `.kiro/steering/guild-chat-safety.md`, states that
-spam, a duplicate, or a message sent about the wrong person is the worst failure mode the
-system has, and is worse than a missed greeting. Every public transaction is therefore
-deliberately lossy: it prefers silence to a false positive.
+The risk model in `.kiro/steering/guild-chat-safety.md` still holds: spam, a duplicate, or
+a message about the wrong person is the worst failure this system can produce, and is
+worse than a missed greeting.
 
-0.2.0 extends this rather than relaxing it. The new mode adds a *sixth* gate in front of
-the three roster-driven messages — after `CanUse`, the feature toggle, self-exclusion,
-dedup, and spacing, there can now also be a human. Notably, every edge case in the new
-code resolves toward *not sending*: a mode switch mid-flight stages instead of posting, a
-guild mismatch discards instead of posting, and a full backlog drops the oldest unsent
-entry rather than flushing it.
+Across these three releases the constraint was extended rather than diluted. The voice
+layer only ever substitutes *whole curated phrases* for *unmodified built-in templates*,
+so it cannot corrupt a link or a name. The Titan menu writes exclusively through
+`A:SetOption`, which refuses template edits outright. The key bindings expose only the
+three actions that cannot send. And the byte-limit logic was hardened precisely because
+translation introduced multibyte characters that a naive truncation would have split.
 
 ## Component Level Business Descriptions
 
 ### Core.lua
-- **Purpose**: Owns the shared namespace, user settings, and the one channel through which
-  all guild chat leaves the addon.
-- **Responsibilities**: Default settings, SavedVariables backfill, and a new migration
-  that normalizes an invalid outgoing mode and refills blank templates; identity helpers
-  (`Key`, `IsSelf`); the gatekeeper `CanUse`; duplicate suppression (`IsDuplicate`); the
-  send queue (`QueueGuild`, `DrainQueue`, `SendGuild`); **the approval backlog
-  (`StageApproval`, `ApproveMessage`, `DismissMessage`, `ClearApprovals`)**; slash
-  commands; the single event dispatcher.
+- **Purpose**: Shared namespace, settings, the single outbound chat path, the approval
+  backlog, and the validating setters.
+- **Responsibilities**: Defaults and SavedVariables migration (mode, blank templates, and
+  now timing clamps and voice validation); identity helpers; `CanUse`; duplicate
+  suppression; UTF-8-safe `ChatLimit`; the `CommsText` indirection that makes the voice
+  layer optional; the send queue; the approval backlog; `SetOption` and `SetVoiceOption`;
+  `NormalizeTiming`; `RunQuickAction`; the key-binding label globals; slash commands; the
+  single event dispatcher.
+
+### Languages.lua *(new in 0.4.0)*
+- **Purpose**: Offline translation data. No logic.
+- **Responsibilities**: The eight-language list, `localeTemplates` for the four built-in
+  templates, and localized role names and activity types. Explicitly not a
+  machine-translation service.
+
+### Accents.lua *(new in 0.4.0)*
+- **Purpose**: Curated style data. No logic beyond a local `register` helper.
+- **Responsibilities**: 29 styles, each with a language binding, four phrase templates, and
+  an optional flair prefix, plus `accentOrder` for stable presentation.
+
+### RaceProfiles.lua *(new in 0.4.0)*
+- **Purpose**: The voice layer's logic.
+- **Responsibilities**: The race-to-style map; `GetPlayerRace` with Forever-specific
+  Skyborne probing; `GetAvailableAccents` applying the language and race filters;
+  `ResolveAccent` including `auto`; `VoiceText` implementing the customized-template-wins
+  rule and the strength behaviour; localized role and activity labels.
 
 ### Roster.lua
-- **Purpose**: Turns the guild roster into the three public social events.
-- **Responsibilities**: Throttled roster requests; roster reads; baseline capture; the
-  diff that produces BT-1 and BT-3; parsing the localized guild-join message for BT-2;
-  discarding suspicious roster reads; clearing queued text **and the approval backlog**
-  on a guild change.
+- **Purpose**: Convert roster state changes into the three public social events.
+- **Responsibilities**: Unchanged logic, but the three message sites now call
+  `A:CommsText` instead of `A:Format`, so greetings honour the voice settings.
 
 ### Alerts.lua
-- **Purpose**: Finds the guild chat requests this specific player can answer.
-- **Responsibilities**: Stripping chat escape codes; craft and group request phrase
-  detection; scanning and caching learned recipes per character; exact recipe-name
-  matching; appending to the capped private alert list (BT-4, BT-5, BT-8). Unchanged in
-  0.2.0.
+- **Purpose**: Find the guild chat requests this player can answer.
+- **Responsibilities**: Unchanged, except `ScanRecipes` now returns a boolean so callers
+  can report whether a profession was actually scanned.
 
 ### Tabard.lua
-- **Purpose**: A courtesy reminder about guild identity in capital cities (BT-6).
-- **Responsibilities**: City detection by map ID then zone name; checking the tabard
-  slot; showing one of two popups. Explicitly does not equip or unequip anything.
-  Unchanged in 0.2.0.
+- **Purpose**: Capital-city tabard reminder.
+- **Responsibilities**: Unchanged since 0.1.0. Still the only module with no automated
+  test coverage.
 
 ### UI.lua
 - **Purpose**: The player's three windows.
-- **Responsibilities**: The paged Alerts inbox, now carrying a live `Review (n)` shortcut
-  button; **the new paged review window (BT-10) with per-row Send and Dismiss, a Dismiss
-  all control, and an empty-state label**; the Ask-for-Help compose window with live
-  preview, role selection, and the single explicit send (BT-7).
+- **Responsibilities**: Alerts inbox with the review shortcut; the review window; the
+  Ask-for-Help composer, whose preview and payload now use `CommsText` and localized role
+  and activity labels, switching to the untranslated path when the help template is
+  customized.
 
 ### Options.lua
-- **Purpose**: Lets the player turn each transaction on or off, choose how outgoing
-  messages are handled, and rewrite their wording.
-- **Responsibilities**: Registering a Settings canvas panel; **the Automatic / Verify
-  radio pair, which warns when switching to Automatic with a non-empty backlog**;
-  per-feature toggles; template edit boxes **now showing their default text and offering
-  a per-template Use default button**; refresh, commit, and restore-defaults behavior.
+- **Purpose**: The full Settings surface.
+- **Responsibilities**: Toggles, the mode radio pair, numeric timing fields, template
+  editors with Use default buttons, the new Languages and accents section with a live
+  preview, and the scroll anchors that let the Titan menu deep-link to a section.
+
+### TitanMenu.lua *(new in 0.3.0)*
+- **Purpose**: Nested right-click configuration without opening Settings.
+- **Responsibilities**: Build the menu tree through Blizzard `MenuUtil`, falling back to
+  the Settings page when the client does not provide it; expose booleans, mode, timing
+  presets, and voice options; route quick actions through `RunQuickAction`; deliberately
+  refuse to edit template text, offering a Settings shortcut instead.
 
 ### Broker.lua
-- **Purpose**: Optional at-a-glance status (BT-9).
-- **Responsibilities**: Detecting LibDataBroker at runtime and publishing a data object
-  with counts and click handlers. **Now surfaces the pending review count and the current
-  mode, and left-click prioritizes the review window whenever messages are waiting.**
-  Entirely absent-safe.
+- **Purpose**: Optional status indicator and the menu's entry point.
+- **Responsibilities**: Publish the LibDataBroker object; report counts, pending reviews,
+  and mode; route clicks, including right-click into the nested menu.
 
-### tests/ (four harnesses, up from one)
-- **Purpose**: Protect the safety invariants offline.
-- **Responsibilities**: `smoke.lua` covers roster diffing, chat parsing, and the recipe
-  cache. **`verify.lua` covers the whole approval workflow including the mode-switch and
-  guild-change invariants. `settings.lua` covers SavedVariables migration and the options
-  widgets. `syntax.lua` compiles all seven shipped modules.** None are listed in the TOC
-  or shipped.
+### Bindings.xml *(new in 0.4.1, shipped but not in the TOC)*
+- **Purpose**: Declare three opt-in hotkeys.
+- **Responsibilities**: Map `FGC_OPEN_ALERTS`, `FGC_ASK_HELP`, and
+  `FGC_RESCAN_PROFESSION` to `RunQuickAction` behind a global existence check. No
+  `default=` attribute, so no key is claimed without the player assigning it.
+
+### tests/ (nine harnesses, up from four)
+- **Purpose**: Protect the invariants offline.
+- **Responsibilities**: `syntax` compiles every module; `smoke` covers roster and chat
+  parsing; `verify` covers the approval workflow; `settings` covers migration and the
+  options widgets; `timing` asserts the exact queue delays and cooldown behaviour;
+  `titanmenu` drives the LDB object and the whole menu tree; `voice` covers languages,
+  filtering, custom-template precedence, and UTF-8 truncation; `keybindings` executes the
+  real XML handlers; `icon` checks the icon wiring across four files.

@@ -43,9 +43,9 @@ function A:ScheduleRecipeScan()
     end)
 end
 function A:ScanRecipes()
-    if not self.char or not C_TradeSkillUI or not C_TradeSkillUI.GetAllRecipeIDs then return end
+    if not self.char or not C_TradeSkillUI or not C_TradeSkillUI.GetAllRecipeIDs then return false end
     local recipeIDs = C_TradeSkillUI.GetAllRecipeIDs()
-    if type(recipeIDs) ~= "table" or #recipeIDs == 0 then return end
+    if type(recipeIDs) ~= "table" or #recipeIDs == 0 then return false end
     local profession = "Current Profession"
     if C_TradeSkillUI.GetProfessionChildSkillLineID and C_TradeSkillUI.GetProfessionInfoBySkillLineID then
         local skillLine = C_TradeSkillUI.GetProfessionChildSkillLineID()
@@ -74,6 +74,7 @@ function A:ScanRecipes()
         end
     end
     if next(known) then self.char.recipes[profession] = known end
+    return true
 end
 function A:MatchCraft(lower)
     -- Require an exact known recipe/output name within an actual crafting request.

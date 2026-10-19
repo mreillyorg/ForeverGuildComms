@@ -1,139 +1,180 @@
 # Code Structure
 
-**Analysis target**: Forever Guild Comms **0.2.0-beta**
-**Supersedes**: the 0.1.0-beta pass of 2026-10-18
+**Analysis target**: Forever Guild Comms **0.4.1-beta**
+**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
 
 ## Build System
 
-- **Type**: None. There is no build step, no transpiler, no bundler, no dependency
-  manager, and no CI. The `.lua` files are the shipped artifact and the client's embedded
-  Lua 5.1 interpreter is the only runtime.
-- **Configuration**: `ForeverGuildComms.toc` is the sole manifest.
+- **Type**: still none for the addon itself. No transpiler, no bundler, no dependency
+  manager. The `.lua` files and `Bindings.xml` are the shipped artifact and the client's
+  embedded Lua 5.1 interpreter is the only runtime.
+- **Added since 0.2.0**: a release pipeline that packages but does not compile.
+  `.github/workflows/package.yml` (30 lines) invokes BigWigsMods/packager on a `v*` tag;
+  `.pkgmeta` (13 lines) controls what the release archive contains.
 
 ```
 ## Interface: 16001
 ## Title: Forever Guild Comms
-## Notes: Welcomes, guild greetings, levels, crafting and LFG alerts, tabard reminders, and group requests.
+## Notes: Welcomes, guild greetings, translated and RP-accented messages, levels, crafting and LFG alerts, tabard reminders, and group requests.
 ## Author: Michael Reilly
-## Version: 0.2.0-beta
+## IconTexture: Interface\AddOns\ForeverGuildComms\Media\Icon
+## Version: 0.4.1-beta
 ## SavedVariables: ForeverGuildCommsDB
 ## SavedVariablesPerCharacter: ForeverGuildCommsCharDB
 ## OptionalDeps: Titan
 Core.lua
+Languages.lua
+Accents.lua
+RaceProfiles.lua
 Roster.lua
 Alerts.lua
 Tabard.lua
 UI.lua
 Options.lua
+TitanMenu.lua
 Broker.lua
 ```
 
-The only TOC change in 0.2.0 is the version. No source file was added or removed, so the
-load order is untouched. The three new test files are correctly absent, as is
-`tests/smoke.lua`.
+Four TOC changes across this span: the version, a new `## IconTexture` line, an expanded
+`## Notes`, and four added file entries.
 
-- **Version coupling check**: all three locations agree at `0.2.0-beta` — the TOC
-  `## Version` (line 5), `A.version` in `Core.lua` (line 4), and the `README.md` title
-  (line 1). The project's three-place rule is upheld in this release.
-- **Interface number**: still `16001`, correctly unchanged.
-- **Packaging**: a zip extracting to `AddOns\ForeverGuildComms\`, containing the `.lua`
-  sources, the `.toc`, `README.md`, and `LICENSE`. `.git`, `.kiro`, `aidlc-docs`, and
-  `tests` are excluded.
+**Load order is now load-order-critical in a second place.** The three voice modules sit
+immediately after `Core.lua` and before `Roster.lua`. `Languages.lua` reads
+`A.defaults.templates` at load time to populate its English entry, so it must follow
+`Core.lua`; `RaceProfiles.lua` reads `A.accents` and `A.accentOrder`, so it must follow
+`Accents.lua`; and `Roster.lua` calls `A:CommsText`, which needs `A:VoiceText` to exist by
+the time a message is built. The current order satisfies all three.
+
+- **Version coupling check**: all three locations agree at `0.4.1-beta` — TOC line 6,
+  `Core.lua` line 9, `README.md` line 1. The three-place rule is upheld.
+- **Interface number**: still `16001`.
+- **Not in the TOC, by requirement**: `Bindings.xml`. The client auto-loads it from the
+  addon root, and listing it would be wrong. Both distribution paths handle it explicitly:
+  the installer appends it outside the TOC scan and fails if absent, and `.pkgmeta` does
+  not exclude it.
 
 ## Module Hierarchy
 
 ```mermaid
 flowchart TD
-    TOC["ForeverGuildComms.toc<br/>declares load order"]
-    Core["Core.lua<br/>namespace, defaults, send queue,<br/>approval backlog, slash commands,<br/>event frame"]
+    TOC["ForeverGuildComms.toc"]
+    Core["Core.lua"]
+    Lang["Languages.lua<br/>data"]
+    Acc["Accents.lua<br/>data"]
+    RP["RaceProfiles.lua<br/>voice logic"]
     Roster["Roster.lua"]
     Alerts["Alerts.lua"]
     Tabard["Tabard.lua"]
     UI["UI.lua"]
     Options["Options.lua"]
+    Titan["TitanMenu.lua"]
     Broker["Broker.lua"]
-    Syntax["tests/syntax.lua"]
-    Smoke["tests/smoke.lua"]
-    Verify["tests/verify.lua"]
-    Settings["tests/settings.lua"]
+    Bind["Bindings.xml<br/>auto-loaded, not in TOC"]
 
     TOC --> Core
-    Core --> Roster
+    Core --> Lang
+    Lang --> Acc
+    Acc --> RP
+    RP --> Roster
     Roster --> Alerts
     Alerts --> Tabard
     Tabard --> UI
     UI --> Options
-    Options --> Broker
-
-    Syntax -.->|"loadfile all 7, runs none"| Core
-    Smoke -.->|"loadfile 3"| Core
-    Verify -.->|"loadfile Core only"| Core
-    Settings -.->|"loadfile Core and Options"| Core
+    Options --> Titan
+    Titan --> Broker
+    Bind -.->|"RunQuickAction"| Core
 ```
 
 ### Text Alternative
 
 ```
-Load order (top to bottom, order matters):
-  1. Core.lua      <- creates shared table A, must be first
-  2. Roster.lua
-  3. Alerts.lua
-  4. Tabard.lua
-  5. UI.lua
-  6. Options.lua
-  7. Broker.lua
+Load order (order matters):
+   1. Core.lua           <- creates shared table A, must be first
+   2. Languages.lua      <- reads A.defaults.templates at load
+   3. Accents.lua        <- pure data
+   4. RaceProfiles.lua   <- reads A.accents, provides VoiceText
+   5. Roster.lua         <- calls A:CommsText
+   6. Alerts.lua
+   7. Tabard.lua
+   8. UI.lua
+   9. Options.lua
+  10. TitanMenu.lua
+  11. Broker.lua
 
-Not loaded by the client (four offline harnesses):
-     tests/syntax.lua    -> compiles all 7 modules
-     tests/smoke.lua     -> Core, Roster, Alerts
-     tests/verify.lua    -> Core
-     tests/settings.lua  -> Core, Options
+Shipped but not listed:
+      Bindings.xml       <- auto-loaded by the client from the addon root
+
+Not shipped (nine offline harnesses):
+      tests/syntax.lua smoke.lua verify.lua settings.lua timing.lua
+      tests/titanmenu.lua voice.lua keybindings.lua icon.lua
 ```
 
 ## Existing Files Inventory
 
-| Path | Purpose and responsibility | Lines | 0.2.0 delta |
+| Path | Purpose | Lines | Since 0.2.0 |
 | --- | --- | --- | --- |
-| `ForeverGuildComms.toc` | Manifest: interface version, metadata, SavedVariables declarations, optional dependency, file load order | 15 | version only |
-| `Core.lua` | Shared table `A`; `A.defaults` including the new `outgoingMode`; `A.classRoles`, `A.roleNames`, `A.roleOrder`; state including the new `A.pendingApprovals`; `fillDefaults` plus the mode and template migrations; helpers `Print`, `Key`, `IsSelf`, `Format`, `CanUse`, `Now`, `IsDuplicate`, `RoleText`, `OpenSettings`; send pipeline `SendGuild`, `QueueGuild`, `DrainQueue`; approval backlog `StageApproval`, `ApproveMessage`, `DismissMessage`, `ClearApprovals`; `A:Initialize`; `/fgc` and `/guildcomms`; the single 14-event frame | 306 | **+79** |
-| `Roster.lua` | `A.roster`, `rosterReady`, `rosterGuild`, `baselineTimer`, `lastRosterRequest`; `guildName`; `RequestRoster`, `ReadRoster`, `AcceptRoster`, `CaptureBaseline`, `OnRosterEvent`, `OnSystemGuildJoin`, `SetupRoster` | 123 | **+1** |
-| `Alerts.lua` | `cleanChat`, `looksLikeCraftRequest`, `looksLikeGroupRequest`; `AddAlert`, `ScheduleRecipeScan`, `ScanRecipes`, `MatchCraft`, `OnGuildChat` | 98 | unchanged |
-| `Tabard.lua` | `citiesByName`, `citiesByMapID`; `inMajorCity`, `guildTabardEquipped`; `FGC_TABARD_CITY` and `FGC_TABARD_EXIT` popups; `CheckTabard`, `ScheduleTabardCheck` | 64 | unchanged |
-| `UI.lua` | `Label`, `Button`, `Check`; `BuildUI` (`FGCAlertsFrame`) with the new `Review (n)` shortcut, `UpdateAlertsUI`, `ShowAlerts`; `BuildApprovalsUI` (`FGCApprovalsFrame`), `UpdateApprovalsUI`, `ShowApprovals`; `BuildRequestUI` (`FGCRequestFrame`), `RequestText`, `UpdateRequestPreview`, `ShowRequest`, `SendHelpRequest` | 285 | **+90** |
-| `Options.lua` | `MakeLabel`, `MakeButton`; `BuildOptions` with `section`/`toggle`/`outgoingMode`/`template` closures, `OnRefresh`, `OnCommit`, `OnDefault`, canvas category registration | 183 | **+41** |
-| `Broker.lua` | `TryBroker`, `UpdateBroker` | 38 | **+4** |
-| `tests/syntax.lua` | Compiles all seven shipped modules with `loadfile` without executing them | 6 | **new** |
-| `tests/smoke.lua` | Roster diffing, guild-join parsing, chat parsing, recipe cache | 72 | unchanged |
-| `tests/verify.lua` | The approval workflow against the real queue and backlog code | 66 | **new** |
-| `tests/settings.lua` | SavedVariables migration and the Options widgets, via a fake widget harness | 63 | **new** |
-| `README.md` | Install, features, commands, the new Automatic-versus-Verify section, templates, limitations, a 10-step test sequence, debugging notes | 78 | **+11** |
-| `LICENSE` | License text | 21 | unchanged |
-| `.gitignore` | Blocks compiled Lua, archives, object files, libraries, shared objects, executables | 41 | unchanged |
+| `ForeverGuildComms.toc` | Manifest: interface, metadata, icon texture, SavedVariables, optional dep, 11-file load order | 15 | +0 lines, 4 edits |
+| `Core.lua` | Namespace, defaults, migrations, identity helpers, `ChatLimit`, `CommsText`, send queue, approval backlog, `SetOption`/`SetVoiceOption`, `NormalizeTiming`, `RunQuickAction`, binding labels, slash commands, the single 14-event frame | 476 | **+170** |
+| `Languages.lua` | 8 languages, `localeTemplates`, `localeRoleNames`, `localeActivityTypes`. Zero methods | 81 | **new** |
+| `Accents.lua` | 29 curated styles via a local `register` helper, plus `accentOrder`. Zero methods | 51 | **new** |
+| `RaceProfiles.lua` | `raceAccents`, `GetPlayerRace`, `GetAvailableAccents`, `ResolveAccent`, `VoiceText`, `LocalizeRoleText`, `LocalizeActivityType` | 102 | **new** |
+| `Roster.lua` | Roster read, baseline, diff, guild-join parsing. Now emits through `CommsText` | 123 | +0 |
+| `Alerts.lua` | Chat parsing, craft and group detection, recipe cache. `ScanRecipes` now returns a boolean | 99 | +1 |
+| `Tabard.lua` | City detection, tabard check, two popups | 64 | +0 |
+| `UI.lua` | Alerts inbox with review shortcut, review window, Ask-for-Help composer with localized labels | 286 | +1 |
+| `Options.lua` | Settings canvas: toggles, mode radios, timing fields, template editors, languages and accents section, scroll anchors | 286 | **+103** |
+| `TitanMenu.lua` | `PopulateTitanMenu`, `OpenTitanMenu` via Blizzard `MenuUtil` | 127 | **new** |
+| `Broker.lua` | LibDataBroker object, counts, click routing | 38 | +0 |
+| `Bindings.xml` | Three opt-in hotkeys dispatching to `RunQuickAction` | 12 | **new** |
+| `tests/syntax.lua` | Compiles all shipped modules | 6 | +0 |
+| `tests/smoke.lua` | Roster diff, guild-join, chat parsing, recipe cache | 75 | +3 |
+| `tests/verify.lua` | Approval workflow, mode switching, guild-change safety | 69 | +3 |
+| `tests/settings.lua` | SavedVariables migration, options widgets | 87 | +24 |
+| `tests/timing.lua` | Queue delay arithmetic, login cooldown, zero cooldown | 55 | **new** |
+| `tests/titanmenu.lua` | LDB object plus the whole nested menu tree | 168 | **new** |
+| `tests/voice.lua` | Languages, accent filtering, custom-template precedence, UTF-8 | 46 | **new** |
+| `tests/keybindings.lua` | Executes the real XML handlers; asserts opt-in and no-send | 62 | **new** |
+| `tests/icon.lua` | Icon wiring across TOC, Broker, Options, installer, and the two textures | 21 | **new** |
+| `README.md` | Install, keybindings, features, commands, modes, templates, limitations, test sequence | 158 | **+80** |
+| `PACKAGING.md` | Release packaging process | 113 | **new** |
+| `.pkgmeta` | Packager config and release exclusions | 13 | **new** |
+| `.github/workflows/package.yml` | Tag-triggered release packaging | 30 | **new** |
+| `install/Install-ForeverGuildComms.ps1` | TOC-driven Windows installer with backup | 313 | **new** |
+| `install/Install-ForeverGuildComms.cmd` | Double-click launcher | 31 | **new** |
+| `install/INSTALL-README.txt` | End-user install instructions | 66 | **new** |
+| `.gitattributes` | LF line-ending policy | 21 | **new** |
+| `.gitignore` | Packager build output, local ZIPs, editor temp files | 9 | rewritten |
+| `LICENSE` | Licence text | 21 | +0 |
+| `Media/Icon.tga` | In-game addon list icon | 64 KB | **new** |
+| `Media/ProjectIcon.png` | Distribution listing icon | 481 KB | **new** |
 
-**Shipped Lua total**: 1,097 lines across seven files, up from 882 (+215, +24%).
-**Offline harnesses**: 207 lines across four files, up from 72 (+135, +188%).
-**Repository total** including the TOC, README, LICENSE, and `.gitignore`: 1,459 lines.
+**Shipped Lua**: 1,733 lines across 11 modules, up from 1,097 across 7 (+58%).
+**Shipped non-Lua**: `Bindings.xml` 12 lines, two textures.
+**Offline harnesses**: 589 lines across 9 files, up from 207 across 4 (+184%).
+**Supporting scripts and docs**: 551 lines (installer 313, PACKAGING 113, README 158 are
+partly overlapping categories; installer plus launcher plus install readme is 410).
 
-Test code is now 19% of shipped source by line count, up from 8%.
+Test code is now **34% of shipped Lua** by line count, up from 19% at 0.2.0 and 8% at
+0.1.0.
 
 ## Key Modules and Their Public Surface
 
+**62 `function A:` definitions**, up from 45. By module: Core 26, UI 11, Roster 7,
+RaceProfiles 6, Alerts 5, Broker 2, Tabard 2, TitanMenu 2, Options 1. `Languages.lua` and
+`Accents.lua` define none — they are pure data.
+
+**16 `local function` definitions**, up from 12: the four new ones are `register`
+(`Accents.lua`) and `SecondsText`, `AddSetting`, `AddTiming` (`TitanMenu.lua`).
+
 ```mermaid
 classDiagram
-    class A {
-        +string version
-        +table defaults
-        +table db
-        +table char
-        +table roster
-        +table alerts
-        +table pendingMessages
-        +table pendingApprovals
-        +table eventsSeen
+    class Core {
         +Print(s)
         +Key(name)
         +IsSelf(name, guid)
+        +ChatLimit(text)
         +Format(template, vars)
+        +CommsText(kind, vars)
         +CanUse()
         +Now()
         +IsDuplicate(key, cooldown)
@@ -145,8 +186,40 @@ classDiagram
         +DismissMessage(index)
         +ClearApprovals()
         +RoleText(roles, noneText)
-        +OpenSettings()
+        +NormalizeTiming(key, value, fallback)
+        +RefreshOptions()
+        +SetOption(key, value)
+        +VoiceOptionLabel(key, id)
+        +SetVoiceOption(key, value)
+        +VoiceChoices(key)
+        +RunQuickAction(action)
+        +OpenSettings(section)
         +Initialize()
+    }
+    class RaceProfiles {
+        +GetPlayerRace()
+        +GetAvailableAccents()
+        +ResolveAccent()
+        +VoiceText(kind, vars)
+        +LocalizeRoleText(roles, fallback)
+        +LocalizeActivityType(kind)
+    }
+    class UI {
+        +BuildUI()
+        +UpdateAlertsUI()
+        +ShowAlerts()
+        +BuildApprovalsUI()
+        +UpdateApprovalsUI()
+        +ShowApprovals()
+        +BuildRequestUI()
+        +RequestText()
+        +UpdateRequestPreview()
+        +ShowRequest()
+        +SendHelpRequest()
+    }
+    class TitanMenu {
+        +PopulateTitanMenu(root)
+        +OpenTitanMenu(owner)
     }
     class Roster {
         +RequestRoster(force)
@@ -164,222 +237,166 @@ classDiagram
         +MatchCraft(lower)
         +OnGuildChat(message, sender)
     }
-    class Tabard {
-        +CheckTabard(initial)
-        +ScheduleTabardCheck()
-    }
-    class UI {
-        +BuildUI()
-        +UpdateAlertsUI()
-        +ShowAlerts()
-        +BuildApprovalsUI()
-        +UpdateApprovalsUI()
-        +ShowApprovals()
-        +BuildRequestUI()
-        +RequestText()
-        +UpdateRequestPreview()
-        +ShowRequest()
-        +SendHelpRequest()
-    }
-    class Options {
-        +BuildOptions()
-    }
-    class Broker {
-        +TryBroker()
-        +UpdateBroker()
-    }
 
-    A <|-- Roster
-    A <|-- Alerts
-    A <|-- Tabard
-    A <|-- UI
-    A <|-- Options
-    A <|-- Broker
+    Core <|-- RaceProfiles
+    Core <|-- UI
+    Core <|-- TitanMenu
+    Core <|-- Roster
+    Core <|-- Alerts
 ```
 
-All seven modules attach their methods to the same table, so this is a composition view
-rather than true inheritance. **45 `function A:` definitions** in total, up from 38:
-Core 17, UI 11, Roster 7, Alerts 5, Tabard 2, Broker 2, Options 1.
+All modules attach to the same table `A`, so this is a composition view, not inheritance.
 
 ## State Declared on the Shared Table
 
-New and changed entries are marked.
+New and changed entries marked.
 
 | State | Initial value | Declared in | Meaning |
 | --- | --- | --- | --- |
-| `A.version` | `"0.2.0-beta"` | Core | **Changed.** Must match TOC and README |
-| `A.defaults` | table | Core | **Changed.** Now includes `outgoingMode` |
-| `A.pendingApprovals` | `{}` | Core | **New.** The approval backlog, capped at 30, newest appended last |
-| `A.pendingMessages` | `{}` | Core | **Contract changed.** Now holds entry records, not bare strings |
-| `A.name` | addon vararg | Core | Addon folder name |
-| `A.classRoles` | 9-class table | Core | Which roles each Vanilla class can fill |
-| `A.roleNames` / `A.roleOrder` | tables | Core | Display labels and stable ordering |
-| `A.lastMessages` | `{}` | Core | Still declared, still never read or written anywhere |
-| `A.eventsSeen` | `{}` | Core | Cooldown key to timestamp map for `IsDuplicate` |
-| `A.alerts` | `{}` | Core | Private alert list, newest first, capped at 30 |
-| `A.onlineCount` / `A.guildCount` | `0` | Core | Roster counts for status and broker |
-| `A.lastGuildSend` | `0` | Core | Timestamp of the last send, now also stamped by `ApproveMessage` |
+| `A.version` | `"0.4.1-beta"` | Core | **Changed** |
+| `A.voiceDefaults` | `{language="en", accent="none", raceFilter=true, accentStrength="subtle"}` | Core | **New.** Per-character voice defaults |
+| `A.timingLimits` | `{messageSpacing={3,120}, loginCooldown={0,3600}}` | Core | **New.** Clamp ranges |
+| `A.defaults` | table | Core | 12 keys plus 4 templates |
+| `A.languages` / `A.languageByID` | 8 entries | Languages | **New** |
+| `A.localeTemplates` | 8 locales x 4 templates | Languages | **New** |
+| `A.localeRoleNames` / `A.localeActivityTypes` | 8 locales | Languages | **New** |
+| `A.accents` / `A.accentOrder` | 29 styles | Accents | **New** |
+| `A.raceAccents` | 13 race keys | RaceProfiles | **New** |
+| `A.char.voice` | backfilled in `Initialize` | Core | **New.** Per-character voice selections |
+| `A.optionsPanel` | set in `BuildOptions` | Options | **New.** Lets `RefreshOptions` find the panel |
+| `A.optionsScroll` | set in `BuildOptions` | Options | **New.** Deep-link scrolling |
+| `A.messagesScrollY` / `A.languagesScrollY` | set in `BuildOptions` | Options | **New.** Section anchors |
+| `A.pendingApprovals` | `{}` | Core | Approval backlog, capped at 30 |
+| `A.pendingMessages` | `{}` | Core | Spacing queue, holds entry records |
+| `A.eventsSeen` | `{}` | Core | Cooldown keys, still never pruned |
+| `A.alerts` | `{}` | Core | Private alerts, newest first, capped at 30 |
+| `A.classRoles` / `roleNames` / `roleOrder` | tables | Core | Role model |
+| `A.onlineCount` / `guildCount` / `lastGuildSend` | `0` | Core | Counters |
 | `A.db` / `A.char` | set in `Initialize` | Core | SavedVariables handles |
-| `A.playerGuid` / `playerName` / `playerKey` / `selfKeys` | set in `Initialize` | Core | Self-identity for `IsSelf` |
-| `A.playerClass` | set in `Initialize` | Core | Drives role availability |
-| `A.initialized` | `nil` then `true` | Core | Event gate |
-| `A.queueTimer` | `nil` then boolean | Core | Drain latch |
-| `A.roster` | `{}` | Roster | Last accepted roster, keyed by normalized name |
-| `A.rosterReady` | `false` | Roster | False means the next read is a baseline |
-| `A.rosterGuild` | `nil` | Roster | Guild the retained roster belongs to |
-| `A.baselineTimer` | `false` | Roster | Baseline debounce latch |
-| `A.lastRosterRequest` | `0` | Roster | 30-second request throttle |
-| `A.recipeScanPending` | `nil` then boolean | Alerts | Recipe scan debounce latch |
-| `A.wasInCity` | `nil` | Tabard | Previous city state; nil means not yet known |
-| `A.tabardCheckScheduled` | `nil` then boolean | Tabard | Tabard debounce latch |
-| `A.alertFrame` / `alertRows` / `alertPage` / `alertPageText` | set in `BuildUI` | UI | Alerts window handles |
-| `A.reviewShortcut` | set in `BuildUI` | UI | **New.** The `Review (n)` button on the alerts window |
-| `A.approvalFrame` / `approvalRows` / `approvalPage` / `approvalPageText` / `approvalEmpty` | set in `BuildApprovalsUI` | UI | **New.** Review window handles |
-| `A.requestFrame` / `activityEdit` / `roleChecks` / `needChecks` / `requestPreview` | set in `BuildRequestUI` | UI | Compose window handles |
-| `A.GetActivityType` | closure | UI | Returns the cycled Dungeon/Raid/Quest value |
-| `A.lastManualRequest` | `nil` | UI | 20-second manual send rate limit |
-| `A.settingsCategory` | set in `BuildOptions` | Options | Category handle for `OpenSettings` |
-| `A.broker` | `nil` | Broker | LibDataBroker data object when available |
+| `A.playerGuid` / `playerName` / `playerKey` / `selfKeys` / `playerClass` | set in `Initialize` | Core | Self-identity |
+| `A.initialized` / `A.queueTimer` | booleans | Core | Gates and latches |
+| `A.roster` / `rosterReady` / `rosterGuild` / `baselineTimer` / `lastRosterRequest` | - | Roster | Roster state |
+| `A.recipeScanPending` | boolean | Alerts | Scan latch |
+| `A.wasInCity` / `A.tabardCheckScheduled` | - | Tabard | Tabard state |
+| `A.alertFrame` / `alertRows` / `alertPage` / `alertPageText` / `reviewShortcut` | set in `BuildUI` | UI | Alerts window |
+| `A.approvalFrame` / `approvalRows` / `approvalPage` / `approvalPageText` / `approvalEmpty` | set in `BuildApprovalsUI` | UI | Review window |
+| `A.requestFrame` / `activityEdit` / `roleChecks` / `needChecks` / `requestPreview` / `GetActivityType` | set in `BuildRequestUI` | UI | Composer |
+| `A.lastManualRequest` | `nil` | UI | 20s manual send limit |
+| `A.settingsCategory` | set in `BuildOptions` | Options | Category handle |
+| `A.broker` | `nil` | Broker | LDB object |
+| ~~`A.lastMessages`~~ | - | - | **Removed in 0.3.0.** Was dead state flagged in both prior passes |
 
-### Note on the changed queue contract
+### Global namespace
 
-In 0.1.0 `A.pendingMessages` held plain strings. In 0.2.0 both it and
-`A.pendingApprovals` hold records:
-
-```lua
-{
-    text  = message:sub(1, 250),
-    kind  = key:match("^([^:]+):") or "message",   -- "login" | "join" | "level"
-    guild = GetGuildInfo("player"),
-    time  = date("%H:%M"),
-}
-```
-
-The `guild` field is the mechanism behind the new stale-message protection, and `kind` is
-what lets the review window label each row. Any future code that reads
-`A.pendingMessages` must expect a table, not a string.
+`_G.ForeverGuildComms`, `SLASH_FOREVERGUILDCOMMS1`, `SLASH_FOREVERGUILDCOMMS2`,
+`SlashCmdList.FOREVERGUILDCOMMS`, four named frames
+(`ForeverGuildCommsOptionsPanel`, `FGCAlertsFrame`, `FGCRequestFrame`,
+`FGCApprovalsFrame`), two popup keys, and **four new `BINDING_*` globals**
+(`BINDING_HEADER_FOREVERGUILDCOMMS` plus three `BINDING_NAME_*`). The binding globals are
+required by the client's Key Bindings UI and have no alternative.
 
 ## Design Patterns
 
-### Shared-namespace module pattern
-- **Location**: every source file, first line. Unchanged.
-- **Implementation**: `local _, A = ...`; methods attached as `function A:Thing()`;
-  file-local helpers stay `local function` and are never exposed. Still exactly 12
-  `local function` definitions.
+### Carried forward and intact
+Shared-namespace modules; single event dispatcher; guarded cross-file dispatch; debounce
+via timer plus boolean latch; queue with cooldown keys; defaults backfill; widget factory
+closures; row pooling with paging; two-phase identity normalization; pattern escaping for
+localized globals; late-bound delivery decision; identity-bound message records;
+asymmetric mode transitions; fail-safe setting normalization.
 
-### Single event dispatcher
-- **Location**: bottom of `Core.lua`. Unchanged — still one frame, still 14 events.
-- **Note**: the 0.2.0 feature added no events, because it is driven entirely by existing
-  roster events plus user clicks.
+### Single validating setter *(new in 0.3.0)*
+- **Location**: `A:SetOption`, and `A:SetVoiceOption` for the per-character scope.
+- **Purpose**: two independent configuration UIs cannot drift or bypass validation.
+- **Implementation**: dispatch on the key's kind — enum keys check membership, timing keys
+  pass through `NormalizeTiming`, boolean keys require a boolean, and anything else is
+  refused. A `changed` flag avoids redundant refreshes, and the refresh fans out to
+  `RefreshOptions` and `UpdateBroker`. `Options.lua` and `TitanMenu.lua` both write only
+  here.
 
-### Guarded cross-file dispatch
-- **Location**: `A:Initialize`, the `OnEvent` body, and now also every mutation of the
-  approval backlog, which calls `UpdateApprovalsUI`, `UpdateBroker`, and `ShowApprovals`
-  through existence checks. `Roster.lua`'s guild-change branch calls `ClearApprovals` the
-  same way.
-- **Purpose**: `Core.lua` owns the backlog but does not require `UI.lua` to exist.
+### Pure data modules *(new in 0.4.0)*
+- **Location**: `Languages.lua`, `Accents.lua`.
+- **Purpose**: separate curated content from the logic that selects it, so adding a
+  language or style is a data edit with no code change.
+- **Implementation**: both define zero methods. `Accents.lua` uses a file-local `register`
+  helper to keep 29 entries declarative and uniform, with `accentOrder` giving stable
+  presentation independent of table iteration order.
 
-### Mode-switched delivery with late binding *(new in 0.2.0)*
-- **Location**: `QueueGuild` and the `DrainQueue` timer callback.
-- **Purpose**: let the player change their mind after a message is composed but before it
-  is sent.
-- **Implementation**: `db.outgoingMode` is read in `QueueGuild` to pick the initial route,
-  and read *again* inside the drain timer. A switch to Verify during the spacing delay
-  re-routes the message to the backlog instead of posting it. The reverse is deliberately
-  not symmetric: switching to Automatic never releases an already-staged message.
+### Optional layer behind an indirection *(new in 0.4.0)*
+- **Location**: `A:CommsText`.
+- **Purpose**: make the whole voice feature removable without touching callers.
+- **Implementation**: `if self.VoiceText then return self:VoiceText(...) end` then fall
+  back to `Format(self.db.templates[kind], vars)`. The comment states the intent: existing
+  tests and stripped-down installs still work. `tests/keybindings.lua` exercises exactly
+  that path by loading only `Core.lua` and `Alerts.lua`.
 
-### Explicit-confirmation send *(extended in 0.2.0)*
-- **Location**: `ApproveMessage`, alongside the pre-existing `SendHelpRequest`.
-- **Purpose**: a user click is the authorization, so no timer is involved.
-- **Implementation**: both call `SendGuild` directly, bypassing the spacing queue. The
-  code comments this explicitly: "The Send button is the actual user confirmation. Do not
-  schedule a delayed automatic send after a click."
+### Customized content wins *(new in 0.4.0)*
+- **Location**: `A:VoiceText`, mirrored by the `custom` flag in `A:RequestText`.
+- **Purpose**: never rewrite text a human authored.
+- **Implementation**: compare the stored template against `A.defaults.templates[kind]`; if
+  they differ, format verbatim and return. This is why an item link or colour code in a
+  custom template survives untouched, and `tests/voice.lua` asserts it with a real
+  hyperlink.
 
-### Identity-bound message records *(new in 0.2.0)*
-- **Location**: the entry builder in `QueueGuild`; checked in `DrainQueue` and
-  `ApproveMessage`.
-- **Purpose**: a message composed for one guild must never reach another.
-- **Implementation**: each entry records `GetGuildInfo("player")` at composition time;
-  both delivery paths compare it against the current guild and discard on mismatch.
-  `ApproveMessage` additionally explains the discard through `A:Print`.
+### Encoding-aware truncation *(new in 0.4.0)*
+- **Location**: `A:ChatLimit`, used by `Format`, `SendGuild`, and the `QueueGuild` entry
+  builder.
+- **Purpose**: translations introduced multibyte characters that a naive `sub(1, 250)`
+  would split, producing mojibake at the limit.
+- **Implementation**: walk backwards from byte 251 while the byte is a UTF-8 continuation
+  byte (`>= 128 and < 192`), then cut. Asserted by a dedicated regression test.
 
-### Setting normalization on load *(new in 0.2.0)*
-- **Location**: `A:Initialize`.
-- **Purpose**: an unrecognized persisted value must not leave the addon in an undefined
-  delivery state.
-- **Implementation**: anything that is not exactly `"verify"` is coerced to
-  `"automatic"`, so a corrupted or hand-edited SavedVariables file fails toward the
-  documented default. Separately, any template that is nil or whitespace-only is refilled
-  from `A.defaults.templates`, while non-empty customizations are preserved.
+### Self-healing dependent selections *(new in 0.4.0)*
+- **Location**: `A:SetVoiceOption`, and the voice block of `A:Initialize`.
+- **Purpose**: a stored accent can become invalid when the language or race filter changes.
+- **Implementation**: after a `language` or `raceFilter` write, re-list the available
+  accents and revert to `auto` if the current choice is absent. The comment is explicit
+  that reverting beats using an incompatible style invisibly.
 
-### Debounce via timer plus boolean latch
-- **Location**: `ScheduleRecipeScan`, `ScheduleTabardCheck`, `baselineTimer`,
-  `queueTimer`. Unchanged.
+### Declarative input with a single dispatcher *(new in 0.4.1)*
+- **Location**: `Bindings.xml` plus `A:RunQuickAction`.
+- **Purpose**: add an input surface without duplicating action logic.
+- **Implementation**: each XML body is a one-line guarded call into the dispatcher, which
+  gates on `A.initialized` and handles three named actions. `TitanMenu.lua` was refactored
+  onto the same dispatcher in the same change, removing the inline duplicate it had.
 
-### Queue with cooldown keys
-- **Location**: `QueueGuild` into `DrainQueue`. The dedup step now runs *before* the mode
-  branch, so Verify mode gets the same duplicate protection as Automatic — a point
-  `tests/verify.lua` asserts directly.
+### Deep-linking into a deferred panel *(new in 0.3.0, extended in 0.4.0)*
+- **Location**: `A:OpenSettings(section)`.
+- **Purpose**: let a menu shortcut land on the right part of a long scrolling panel.
+- **Implementation**: open the category, then `C_Timer.After(0, ...)` to defer the scroll
+  until the scroll child exists, using anchors published by `Options.lua`. The comment
+  notes the asynchronous display is the reason for the deferral.
 
-### Defaults backfill
-- **Location**: `fillDefaults`, called from `A:Initialize`. Unchanged, and it correctly
-  introduced `outgoingMode` to existing profiles without disturbing other settings.
-
-### Widget factory closures
-- **Location**: `Label`, `Button`, `Check` in `UI.lua`; `MakeLabel`, `MakeButton` and the
-  `section` / `toggle` / `outgoingMode` / `template` closures in `Options.lua`.
-- **0.2.0 addition**: the `outgoingMode` closure builds a mutually exclusive radio pair
-  from a local list and registers a single refresh closure that re-syncs both buttons
-  from `A.db.outgoingMode`.
-
-### Row pooling with paging *(now used twice)*
-- **Location**: `BuildUI` / `UpdateAlertsUI` (seven rows, seven per page) and
-  `BuildApprovalsUI` / `UpdateApprovalsUI` (four rows, four per page).
-- **Implementation**: a fixed set of reusable row frames; the update function maps the
-  backing list onto them by page offset, shows or hides each, and clamps the page to the
-  computed maximum. The approval rows additionally store `row.entryIndex` so their Send
-  and Dismiss handlers know which backlog entry they refer to, and the window shows a
-  dedicated empty-state label when the backlog is empty.
-
-### Two-phase identity normalization
-- **Location**: `A:Key` and `A:IsSelf`. Unchanged.
-
-### Pattern escaping for localized globals
-- **Location**: `OnSystemGuildJoin`. Unchanged.
-
-### Test harness with a synthetic widget layer *(new in 0.2.0)*
-- **Location**: `tests/settings.lua`.
-- **Purpose**: make `Options.lua` loadable and assertable offline, which the project's
-  own testing notes previously said was impossible.
-- **Implementation**: a single metatable whose `__index` returns a real implementation for
-  the handful of methods the test cares about (`SetText`, `GetText`, `SetChecked`,
-  `GetChecked`, `SetScript`, `HasFocus`, `CreateFontString`) and a no-op for everything
-  else. `CreateFrame` records every widget it builds in a flat list, so the test can
-  afterwards find widgets by template name or label text and invoke their stored
-  `OnClick` handlers.
+### Harness with a synthetic widget layer *(extended)*
+- **Location**: `tests/settings.lua` and `tests/titanmenu.lua`.
+- **Purpose**: load frame-dependent modules offline.
+- **Implementation**: a metatable whose `__index` returns real implementations for the few
+  methods under test and a no-op otherwise, with `CreateFrame` recording every widget.
+  `tests/titanmenu.lua` extends the idea to the menu API itself, building a fake node type
+  with `CreateTitle`, `CreateButton`, `CreateCheckbox`, `CreateRadio`, and `CreateDivider`
+  that records children, so the menu tree can be walked and its callbacks invoked.
 
 ## Critical Dependencies
 
 ### WoW Forever client API (1.60.1, Interface 16001)
-- **Version**: game version 1.60.1; TOC interface `16001`.
-- **Usage**: every external call, written against the modern namespaced API surface.
-- **Purpose**: the entire runtime. Every call site is feature-detected because the client
+- **Usage**: every external call, written against the modern namespaced surface.
+- **New call sites in this span**: `MenuUtil.CreateContextMenu` (feature-detected, with a
+  Settings fallback), `UnitRace`, `UIRadioButtonTemplate`, and the `BINDING_*` /
+  `Bindings.xml` key-binding mechanism.
+- **Purpose**: the entire runtime. Every call remains feature-detected because the client
   is in beta.
-- **0.2.0 addition**: `UIRadioButtonTemplate` is now used for the mode selector. It is
-  the one new Blizzard template dependency in this release and, unlike the other
-  templates, it is used without a feature-detection guard — consistent with how the
-  pre-existing templates are used, since `BuildOptions` already returns early when the
-  Settings API is absent.
 
 ### LibDataBroker-1.1 via LibStub
-- **Version**: unpinned, supplied by Titan Panel.
-- **Usage**: `Broker.lua` only, through `LibStub("LibDataBroker-1.1", true)`.
-- **Purpose**: optional status indicator, now also reporting the review backlog and mode.
-- Still optional, still not embedded, still no version assertion.
+- **Usage**: `Broker.lua` only, `LibStub("LibDataBroker-1.1", true)`.
+- Still optional, still runtime-detected, still not embedded, still no version assertion.
+- **Worth noting**: `TitanMenu.lua` did **not** add a Titan dependency. It uses Blizzard's
+  `MenuUtil`, so no Titan menu library is bundled and the no-hard-dependency policy holds.
+
+### BigWigsMods/packager *(new, release-time only)*
+- **Version**: `@v2` action pin.
+- **Usage**: `.github/workflows/package.yml`, on a `v*` tag.
+- **Purpose**: build and attach the release ZIP. Not a runtime dependency.
 
 ### Standalone Lua 5.1 interpreter (development only)
-- **Version**: 5.1.5 recommended, matching the version the client embeds.
-- **Usage**: running the four harnesses in `tests/`.
-- **Purpose**: offline verification. LuaJIT 2.1 works but is a superset, so test code
-  must avoid `ffi`, `bit`, `jit`, `table.new`, and `goto`. Lua 5.4 is unsuitable because
-  of the integer/float split and the relocation of `unpack`.
+- **Usage**: running the nine harnesses from the addon root.
+- **Purpose**: offline verification. LuaJIT 2.1 works but is a superset; Lua 5.4 is
+  unsuitable.

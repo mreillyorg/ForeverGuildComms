@@ -1,104 +1,108 @@
 # System Architecture
 
-**Analysis target**: Forever Guild Comms **0.2.0-beta**
-**Supersedes**: the 0.1.0-beta pass of 2026-10-18
+**Analysis target**: Forever Guild Comms **0.4.1-beta**
+**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
 
 ## System Overview
 
 Forever Guild Comms is a single-package, in-process World of Warcraft addon written in
-plain Lua 5.1. It has no build step, no server component, no network calls of its own,
-and no data store beyond the client's SavedVariables files. It runs entirely inside the
-WoW Forever 1.60.1 client process and is driven exclusively by client events.
+plain Lua 5.1. It has no build step, no server component, no network calls of its own, and
+no data store beyond the client's SavedVariables files. It runs entirely inside the WoW
+Forever 1.60.1 client process and is driven by client events plus user input.
 
-The architecture is a **shared-namespace module set with a single event dispatcher**.
-Seven source files are loaded in a fixed order declared by the TOC. Each file receives
-the addon vararg and attaches its behavior to one shared table, conventionally named `A`:
+The architecture remains a **shared-namespace module set with a single event dispatcher**.
+Eleven source files are loaded in a fixed order declared by the TOC, each attaching
+behaviour to one shared table `A`, published once as `_G.ForeverGuildComms`. A twelfth
+shipped file, `Bindings.xml`, is loaded automatically by the client from the addon root and
+must *not* appear in the TOC.
 
-```lua
-local _, A = ...        -- Core.lua uses: local ADDON, A = ...
-```
+Globals created: `_G.ForeverGuildComms`, the two `SLASH_*` variables and the `SlashCmdList`
+entry, four named frames, two `StaticPopupDialogs` keys, and four `BINDING_*` label
+globals.
 
-`Core.lua` publishes that table once as `_G.ForeverGuildComms`. No other globals are
-created except the `SLASH_*` / `SlashCmdList` entries, four named frames, and two
-`StaticPopupDialogs` keys.
+Five architectural decisions now dominate:
 
-Three architectural decisions dominate everything else:
+1. **One event frame.** Still exactly one `CreateFrame("Frame")` dispatcher at the bottom
+   of `Core.lua`, still 14 registered events. Three releases of features added none,
+   because each is driven by existing events or by user input.
+2. **One outbound chat path.** Everything terminates at `A:SendGuild`, the only caller of
+   `SendChatMessage`.
+3. **Mode-switched delivery.** `A.db.outgoingMode` is re-read inside the drain timer, so a
+   mid-flight mode change captures a message rather than posting it.
+4. **One validating setter per scope** *(new in 0.3.0/0.4.0)*. `A:SetOption` for
+   account settings and `A:SetVoiceOption` for per-character voice settings. Both the
+   Settings panel and the Titan menu write only through these, which is what keeps two
+   independent UIs from disagreeing and guarantees clamping regardless of entry point.
+5. **An optional presentation layer in front of message text** *(new in 0.4.0)*.
+   `A:CommsText` delegates to `A:VoiceText` when the voice modules are loaded and falls
+   back to plain `A:Format` when they are not, so the three data modules are genuinely
+   removable.
 
-1. **One event frame.** Exactly one `CreateFrame("Frame")` dispatcher exists, at the
-   bottom of `Core.lua`. It registers 14 events and routes each to a guarded module
-   method. Feature files never create their own event frames. Unchanged in 0.2.0.
-2. **One outbound chat path.** Every message still terminates at `A:SendGuild`, the only
-   caller of `SendChatMessage`. What changed in 0.2.0 is that there are now **three**
-   routes into it rather than two.
-3. **Mode-switched delivery.** `A.db.outgoingMode` selects, at the moment of delivery
-   rather than at the moment of composition, whether a roster-driven message is posted
-   automatically or staged for human approval. The mode is re-read inside the drain timer,
-   which is what makes a mid-flight mode change capture a message instead of posting it.
+## The four routes to guild chat
 
-Because later modules are optional from `Core.lua`'s point of view, every cross-file call
-is made through an existence check, which makes the module set degrade rather than error
-if a file is missing or fails to load:
-
-```lua
-if self.BuildUI then self:BuildUI() end
-if A.OnGuildChat then A:OnGuildChat(...) end
-if self.ClearApprovals then self:ClearApprovals() end
-```
-
-## The three routes to guild chat
-
-This is the most important structural change in 0.2.0 and the thing any future change
-must not disturb.
+Unchanged in count since 0.2.0, but the text flowing through them is now passed through the
+voice layer first.
 
 ```
 Route 1 - AUTOMATIC (roster-driven, unattended)
-    QueueGuild -> pendingMessages -> DrainQueue -> SendGuild
+    CommsText -> QueueGuild -> pendingMessages -> DrainQueue -> SendGuild
     Gates: CanUse, feature toggle, IsSelf, IsDuplicate, spacing,
            and at fire time: CanUse again, guild match, mode re-check
 
 Route 2 - VERIFY (roster-driven, human in the loop)
-    QueueGuild -> StageApproval -> pendingApprovals -> [human clicks Send]
-               -> ApproveMessage -> SendGuild
+    CommsText -> QueueGuild -> StageApproval -> pendingApprovals
+              -> [human clicks Send] -> ApproveMessage -> SendGuild
     Gates: CanUse, feature toggle, IsSelf, IsDuplicate,
            and at click time: CanUse again, guild match, explicit click
-    No spacing delay. The click is the confirmation.
 
-Route 3 - EXPLICIT USER REQUEST (unchanged from 0.1.0)
+Route 3 - EXPLICIT USER REQUEST
     [human clicks Send to Guild] -> SendHelpRequest -> SendGuild
     Gates: CanUse, non-empty activity, 20-second self-imposed rate limit
-    Bypasses the queue by design.
+
+Route 4 - MID-FLIGHT CAPTURE
+    Route 1 enqueued, then mode switched to verify
+    -> drain timer stages the entry instead of sending it
 ```
 
-A message can also move from Route 1 to Route 2 after it has been queued: if the player
-switches to Verify while a message is still waiting in the spacing queue, the drain timer
-stages it instead of sending it.
+Three input surfaces now feed the private, non-sending actions: slash commands, the Titan
+nested menu, and key bindings. All three converge on `A:RunQuickAction`, which cannot
+reach `SendGuild`.
 
 ## Architecture Diagram
 
 ```mermaid
 flowchart TD
     subgraph Client["WoW Forever 1.60.1 Client"]
-        Events["Client Events<br/>14 registered"]
-        API["Blizzard APIs<br/>C_Timer, C_GuildInfo,<br/>C_TradeSkillUI, C_Map,<br/>Settings, SendChatMessage"]
+        Events["Client events<br/>14 registered"]
+        API["Blizzard APIs<br/>C_Timer, C_GuildInfo, C_TradeSkillUI,<br/>C_Map, Settings, MenuUtil, UnitRace"]
         SV["SavedVariables<br/>account and per-character"]
+        Keys["Bindings.xml<br/>auto-loaded, not in TOC"]
     end
 
-    subgraph Addon["Forever Guild Comms 0.2.0"]
+    subgraph Data["Voice data, pure tables"]
+        Lang["Languages.lua<br/>8 languages"]
+        Acc["Accents.lua<br/>29 styles"]
+    end
+
+    subgraph Addon["Forever Guild Comms 0.4.1"]
         Dispatcher["Core.lua<br/>single event frame"]
+        Voice["RaceProfiles.lua<br/>VoiceText, ResolveAccent,<br/>GetAvailableAccents"]
+        Comms["CommsText<br/>optional indirection"]
         Gate["QueueGuild<br/>CanUse, dedup, build entry"]
         Mode{"outgoingMode"}
-        AutoQ["pendingMessages<br/>spacing queue"]
+        AutoQ["pendingMessages"]
         Drain["DrainQueue<br/>re-checks guild and mode"]
         Backlog["pendingApprovals<br/>capped at 30"]
-        Approve["ApproveMessage<br/>explicit click"]
         Send["SendGuild<br/>only SendChatMessage caller"]
+        Setters["SetOption / SetVoiceOption<br/>validating writers"]
+        Quick["RunQuickAction<br/>alerts, help, rescan"]
         Roster["Roster.lua"]
         Alerts["Alerts.lua"]
         Tabard["Tabard.lua"]
-        UI["UI.lua<br/>alerts, review, request"]
+        UI["UI.lua<br/>alerts, review, composer"]
         Options["Options.lua"]
+        Titan["TitanMenu.lua"]
         Broker["Broker.lua"]
-        State["Shared table A"]
     end
 
     GuildChat["Guild Chat Channel"]
@@ -109,266 +113,255 @@ flowchart TD
     Dispatcher --> Alerts
     Dispatcher --> Tabard
 
-    Roster --> Gate
+    Lang --> Voice
+    Acc --> Voice
+    Voice --> Comms
+    Roster --> Comms
+    UI --> Comms
+    Comms --> Gate
+
     Gate --> Mode
     Mode -->|"automatic"| AutoQ
     Mode -->|"verify"| Backlog
     AutoQ --> Drain
     Drain -->|"mode still automatic"| Send
     Drain -->|"mode now verify"| Backlog
-    Drain -->|"guild changed"| Discard["discarded"]
     Backlog --> UI
-    UI -->|"Send click"| Approve
-    UI -->|"Dismiss click"| Discard
-    Approve --> Send
-    UI -->|"Ask for Help send"| Send
+    UI -->|"Send click"| Send
+    UI -->|"composer send"| Send
     Send --> GuildChat
 
+    Keys --> Quick
+    Titan --> Quick
+    Quick --> UI
+    Quick --> Alerts
+
+    Options --> Setters
+    Titan --> Setters
+    Setters --> SV
+    Broker --> Titan
     Alerts -->|"private only"| Player
     Tabard -->|"popup only"| Player
-    Options --> State
-    Broker --> State
-    State --> UI
-    State --> Broker
     API --> Roster
-    API --> Alerts
+    API --> Voice
     API --> Tabard
-    State <--> SV
 ```
 
 ### Text Alternative
 
 ```
 Client events (14) -> Core.lua single event frame
-                          |
-         +----------------+----------------+
-         v                v                v
-    Roster.lua       Alerts.lua       Tabard.lua
-         |                |                |
-         v                v                v
-    QueueGuild      private alert    private popup
-         |           (never public)   (never public)
-         v
-    outgoingMode?
-      |        |
- automatic   verify
-      |        |
-      v        v
- pendingMessages   pendingApprovals (cap 30)
-      |                  |
-      v                  v
-  DrainQueue        Review window
-  re-checks:        Send click -> ApproveMessage
-   - CanUse         Dismiss click -> discarded
-   - guild match
-   - mode again
-      |                  |
-      +--------+---------+
-               v
-          SendGuild  <-- also reached directly by
-               |          SendHelpRequest (explicit)
-               v
-        Guild Chat Channel
+                        -> Roster.lua -> CommsText -> QueueGuild
+                        -> Alerts.lua (private only)
+                        -> Tabard.lua (popup only)
+
+Languages.lua + Accents.lua (pure data)
+        -> RaceProfiles.lua (VoiceText)
+        -> CommsText  [falls back to Format if voice modules absent]
+        -> QueueGuild
+
+QueueGuild -> outgoingMode?
+                automatic -> pendingMessages -> DrainQueue -> SendGuild
+                verify    -> pendingApprovals -> Review window
+                                                 Send -> SendGuild
+                                                 Dismiss -> discarded
+
+Input surfaces for non-sending actions:
+    slash commands  -+
+    Titan menu      -+-> RunQuickAction -> alerts | help composer | rescan
+    Bindings.xml    -+
+
+Configuration writers:
+    Options.lua  -+-> SetOption / SetVoiceOption -> SavedVariables
+    TitanMenu    -+
 ```
 
 ## Component Descriptions
 
-### Core.lua
-- **Purpose**: Shared namespace, settings, send pipeline, approval backlog, command
-  surface, event dispatch.
-- **Responsibilities**: Publish `_G.ForeverGuildComms`; declare `A.defaults` and
-  `A.classRoles`; backfill SavedVariables via `fillDefaults` plus the 0.2.0 mode and
-  template migrations; provide `Print`, `Key`, `IsSelf`, `Format`, `CanUse`, `Now`,
-  `IsDuplicate`, `RoleText`, `OpenSettings`; own `SendGuild`, `QueueGuild`, `DrainQueue`,
-  `StageApproval`, `ApproveMessage`, `DismissMessage`, `ClearApprovals`; run
-  `A:Initialize`; register `/fgc` and `/guildcomms`; host the one event frame.
-- **Dependencies**: Blizzard globals only. Calls into later modules strictly through
-  existence checks.
+### Core.lua (476 lines, +170 since 0.2.0)
+- **Purpose**: Foundation, send pipeline, approval backlog, validating setters, command and
+  event surface.
+- **New in this span**: `A:ChatLimit` (UTF-8-safe 250-byte truncation); `A:CommsText` (the
+  voice indirection); `A.timingLimits` and `A:NormalizeTiming`; `A:RefreshOptions`;
+  `A:SetOption`; `A:VoiceOptionLabel`, `A:SetVoiceOption`, `A:VoiceChoices`;
+  `A:RunQuickAction`; the four `BINDING_*` globals; `A.voiceDefaults`; a section parameter
+  on `A:OpenSettings` for deep linking; timing and voice migration in `A:Initialize`.
+  Removed: the dead `A.lastMessages` table.
+- **Dependencies**: Blizzard globals only. All cross-module calls remain guarded.
 - **Type**: Application (foundation)
-- **0.2.0 delta**: +99 lines. Four new methods, one new state table, one new setting,
-  two new migrations, a rewritten `QueueGuild` and `DrainQueue`, two new slash
-  subcommands, and an expanded `/fgc status`.
 
-### Roster.lua
-- **Purpose**: Convert roster state changes into the three public social messages.
-- **Responsibilities**: `RequestRoster` with a 30-second throttle; `ReadRoster`;
-  `AcceptRoster` (the diff); `CaptureBaseline`; `OnRosterEvent`; `OnSystemGuildJoin`;
-  `SetupRoster` with a 60-second ticker.
-- **Dependencies**: `Core.lua` (`Key`, `IsSelf`, `Format`, `CanUse`, `Now`,
-  `QueueGuild`, `ClearApprovals`); the guild roster and guild-info globals;
-  `ERR_GUILD_JOIN_S`; `C_Timer`. Optionally calls `UpdateBroker`.
+### Languages.lua (81 lines, new in 0.4.0)
+- **Purpose**: Offline translation data for the four built-in templates.
+- **Responsibilities**: `A.languages` (8 entries), `A.languageByID`, `A.localeTemplates`,
+  `A.localeRoleNames`, `A.localeActivityTypes`. Zero methods.
+- **Dependencies**: reads `A.defaults.templates` for the English entry, so it must load
+  after `Core.lua`.
+- **Type**: Application (data)
+
+### Accents.lua (51 lines, new in 0.4.0)
+- **Purpose**: Curated style data.
+- **Responsibilities**: `A.accents` populated by a file-local `register` helper, and
+  `A.accentOrder` for stable ordering. 29 styles: 21 bound to English (8 regional human,
+  13 WoW-race RP), 3 Spanish, 1 French, 1 German, 2 Portuguese, 1 Italian. Zero methods.
+- **Type**: Application (data)
+
+### RaceProfiles.lua (102 lines, new in 0.4.0)
+- **Purpose**: The voice layer's logic.
+- **Responsibilities**: `A.raceAccents`; `A:GetPlayerRace`; `A:GetAvailableAccents`;
+  `A:ResolveAccent`; `A:VoiceText`; `A:LocalizeRoleText`; `A:LocalizeActivityType`.
+- **Dependencies**: `Languages.lua` and `Accents.lua` data, `A.char.voice`, `UnitRace`.
 - **Type**: Application (feature)
-- **0.2.0 delta**: +1 line. The guild-change branch now also calls `ClearApprovals`
-  through an existence check, so the approval backlog cannot survive into a new guild.
 
-### Alerts.lua
-- **Purpose**: Detect answerable requests in guild chat and maintain the recipe cache.
-- **Responsibilities**: `cleanChat`, `looksLikeCraftRequest`, `looksLikeGroupRequest`
-  (file-local); `AddAlert` with 120-second dedup and a 30-entry cap;
-  `ScheduleRecipeScan` and `ScanRecipes`; `MatchCraft`; `OnGuildChat`.
-- **Dependencies**: `Core.lua` (`Key`, `IsSelf`, `CanUse`, `IsDuplicate`, `Print`);
-  `C_TradeSkillUI`, `C_Timer`, `PlaySound`, `SOUNDKIT`, `date`. Optionally calls
-  `UpdateAlertsUI` and `UpdateBroker`.
+### Roster.lua (123 lines, +0)
+- **Purpose**: Convert roster state changes into the three public events.
+- **Change**: the three message sites call `A:CommsText` rather than `A:Format`. Diff
+  logic, baseline behaviour, throttles, and the guild-change reset are untouched.
 - **Type**: Application (feature)
-- **0.2.0 delta**: none. Alerts were already private, so the new mode does not apply to
-  them.
 
-### Tabard.lua
-- **Purpose**: Capital-city guild tabard courtesy reminder.
-- **Responsibilities**: `citiesByName` and `citiesByMapID` tables; `inMajorCity` and
-  `guildTabardEquipped` (file-local); the `FGC_TABARD_CITY` and `FGC_TABARD_EXIT` popups;
-  `CheckTabard`; `ScheduleTabardCheck` with a 1.2-second debounce.
-- **Dependencies**: `Core.lua` (`CanUse`); `C_Map.GetBestMapForUnit`, `GetRealZoneText`,
-  `GetInventoryItemID`, `StaticPopup_Show`, `ToggleCharacter`, `C_Timer`.
+### Alerts.lua (99 lines, +1)
+- **Purpose**: Detect answerable requests; maintain the recipe cache.
+- **Change**: `A:ScanRecipes` returns `true` on a successful scan and `false` on each early
+  exit, so `RunQuickAction` can report the real outcome.
 - **Type**: Application (feature)
-- **0.2.0 delta**: none.
 
-### UI.lua
-- **Purpose**: The player's three windows.
-- **Responsibilities**: `Label`, `Button`, `Check` (file-local widget factories);
-  `BuildUI` creating `FGCAlertsFrame` with seven reusable rows, paging, and the new
-  `Review (n)` shortcut; `UpdateAlertsUI`; `ShowAlerts`; **`BuildApprovalsUI` creating
-  `FGCApprovalsFrame` with four reusable rows, paging, per-row Send and Dismiss, a
-  Dismiss all button, and an empty-state label; `UpdateApprovalsUI`; `ShowApprovals`**;
-  `BuildRequestUI` creating `FGCRequestFrame`; `RequestText`; `UpdateRequestPreview`;
-  `ShowRequest`; `SendHelpRequest`.
-- **Dependencies**: `Core.lua` (`Format`, `RoleText`, `CanUse`, `SendGuild`, `Now`,
-  `Print`, `ApproveMessage`, `DismissMessage`, `ClearApprovals`); `CreateFrame` and the
-  Blizzard frame templates; `ChatFrame_OpenChat`.
+### Tabard.lua (64 lines, +0)
+- **Purpose**: Capital-city tabard reminder.
+- **Change**: none since 0.1.0. The suspected initial-check ordering issue therefore
+  stands.
+- **Type**: Application (feature)
+
+### UI.lua (286 lines, +1)
+- **Purpose**: The three windows.
+- **Change**: `A:RequestText` computes a `custom` flag by comparing the help template
+  against its default, then uses either raw or localized role and activity labels and
+  routes through `CommsText`. The window and row machinery is otherwise unchanged.
 - **Type**: Application (presentation)
-- **0.2.0 delta**: +90 lines. One new frame, three new methods, a new shortcut button,
-  and repositioned alerts-window controls to make room for it.
 
-### Options.lua
-- **Purpose**: Lets the player turn each transaction on or off, choose the outgoing mode,
-  and rewrite the wording.
-- **Responsibilities**: `MakeLabel`, `MakeButton` (file-local); `BuildOptions` creating
-  `ForeverGuildCommsOptionsPanel` inside a scroll frame, with `section`, `toggle`,
-  **`outgoingMode`**, and `template` builders, plus `OnRefresh`, `OnCommit`,
-  `OnDefault`; registers the canvas category.
-- **Dependencies**: `Settings.RegisterCanvasLayoutCategory`,
-  `Settings.RegisterAddOnCategory`, `CreateFrame`; `A.db`, `A.defaults`,
-  `A.pendingApprovals`. Degrades with a printed note if the modern Settings API is
-  missing.
+### Options.lua (286 lines, +103)
+- **Purpose**: The full Settings surface.
+- **Change**: numeric timing fields with validation and Use default buttons; a Languages
+  and accents section with language, accent, race filter, strength, and a live preview; an
+  addon icon texture; `A.optionsPanel`, `A.optionsScroll`, `A.messagesScrollY`, and
+  `A.languagesScrollY` published so the Titan menu can deep-link; `OnDefault` extended to
+  reset per-character voice settings.
 - **Type**: Application (presentation)
-- **0.2.0 delta**: +43 lines. A two-option radio group for the mode, a per-template
-  *Use default* button, the default text rendered beneath each edit box, a taller content
-  frame, and reworded guidance.
 
-### Broker.lua
-- **Purpose**: Optional status indicator.
-- **Responsibilities**: `TryBroker` detecting `LibStub("LibDataBroker-1.1", true)` and
-  publishing the `ForeverGuildComms` data object; `UpdateBroker` refreshing the label.
-- **Dependencies**: `LibStub` (optional, runtime-detected); `A.onlineCount`,
-  `A.guildCount`, `A.alerts`, `A.pendingApprovals`, `A.db.outgoingMode`.
+### TitanMenu.lua (127 lines, new in 0.3.0)
+- **Purpose**: Nested right-click configuration.
+- **Responsibilities**: `A:PopulateTitanMenu` builds the tree — enable toggle, outgoing
+  messages (mode radios, the three event toggles, spacing and cooldown preset submenus
+  with reset), private requests, languages and accents, tabard, quick actions, and
+  Settings shortcuts. `A:OpenTitanMenu` creates the context menu through `MenuUtil`,
+  printing a note and opening Settings when the client lacks it, and substituting
+  `UIParent` when the LDB consumer passes a non-frame owner.
+- **Dependencies**: `MenuUtil` (feature-detected), `A:SetOption`, `A:SetVoiceOption`,
+  `A:RunQuickAction`, `A:OpenSettings`.
+- **Type**: Application (presentation)
+
+### Broker.lua (38 lines, +0)
+- **Purpose**: Optional status indicator and the menu entry point.
 - **Type**: Application (optional integration)
-- **0.2.0 delta**: +4 lines. Left-click now opens the review window when the backlog is
-  non-empty, the tooltip reports the pending count and the current mode, and the label
-  appends `| Review n` when anything is waiting.
 
-### tests/ (not shipped)
-- `syntax.lua` — compiles all seven shipped modules with `loadfile`, running none of them.
-- `smoke.lua` — roster diffing, guild-join parsing, chat parsing, recipe cache.
-- `verify.lua` — the full approval workflow against the *real* `QueueGuild`,
-  `DrainQueue`, `StageApproval`, `ApproveMessage`, `DismissMessage`, and `ClearApprovals`.
-- `settings.lua` — SavedVariables migration and the Options widgets, using a
-  metatable-driven fake widget harness that makes `Options.lua` loadable offline.
+### Bindings.xml (12 lines, new in 0.4.1, shipped, not in TOC)
+- **Purpose**: Three opt-in hotkeys in the `ADDONS` category under a
+  `FOREVERGUILDCOMMS` header.
+- **Responsibilities**: each binding body calls
+  `ForeverGuildComms:RunQuickAction("<action>")` behind an `if ForeverGuildComms then`
+  guard. No `default=` attribute anywhere.
+- **Type**: Application (declarative input)
 
 ## Data Flow
 
-### BT-1 and BT-3 in Automatic mode
+### BT-1 with the voice layer engaged
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant E as Core event frame
     participant R as Roster.lua
+    participant X as CommsText
+    participant V as VoiceText
     participant Q as QueueGuild
-    participant D as DrainQueue
     participant G as Guild chat
 
-    C->>E: GUILD_ROSTER_UPDATE
-    E->>R: OnRosterEvent, guarded
+    C->>R: GUILD_ROSTER_UPDATE
     R->>R: baseline, or diff with suspicious-read guard
-    R->>Q: QueueGuild msg, key, cooldown
-    Q->>Q: CanUse, non-empty string, IsDuplicate
-    Q->>Q: build entry {text, kind, guild, time}
-    Q->>D: mode is automatic, enqueue and drain
-    D->>D: wait max(3, messageSpacing) since lastGuildSend
-    D->>D: re-check CanUse, guild match, mode
-    D->>G: SendGuild, pcall, clamped to 250 chars
+    R->>X: CommsText("login", vars)
+    X->>V: VoiceText present, delegate
+    V->>V: template customized? if so, format it verbatim and stop
+    V->>V: else pick localeTemplates[lang][kind]
+    V->>V: ResolveAccent, apply style phrase
+    V->>V: apply flair by strength, never for "help"
+    V->>Q: Format, then ChatLimit to 250 bytes on a UTF-8 boundary
+    Q->>Q: CanUse, non-empty, IsDuplicate, build entry
+    Q->>G: automatic path, spaced and re-verified
 ```
 
-### BT-1 and BT-3 in Verify mode, resolving to BT-10
-
-```mermaid
-sequenceDiagram
-    participant R as Roster.lua
-    participant Q as QueueGuild
-    participant S as StageApproval
-    participant U as Review window
-    participant P as Player
-    participant G as Guild chat
-
-    R->>Q: QueueGuild msg, key, cooldown
-    Q->>Q: CanUse, non-empty string, IsDuplicate
-    Q->>S: mode is verify
-    S->>S: drop oldest if backlog already 30
-    S->>S: append entry
-    S->>U: UpdateApprovalsUI and ShowApprovals
-    U->>P: row shows time, kind label, full text
-    alt Player clicks Send
-        P->>U: Send
-        U->>Q: ApproveMessage index
-        Q->>Q: CanUse, and entry.guild still matches
-        Q->>G: SendGuild directly, no spacing delay
-    else Player clicks Dismiss
-        P->>U: Dismiss
-        U->>U: remove entry, nothing sent
-    else Guild changed first
-        Q->>Q: entry.guild mismatch, discard and explain
-    end
-```
-
-### Mid-flight mode change
-
-```mermaid
-sequenceDiagram
-    participant Q as QueueGuild
-    participant AQ as pendingMessages
-    participant T as Drain timer
-    participant B as pendingApprovals
-    participant G as Guild chat
-
-    Q->>AQ: enqueue, mode was automatic
-    Note over Q,AQ: Player switches mode to verify
-    T->>T: timer fires, re-reads db.outgoingMode
-    T->>B: now verify, stage for approval
-    Note over T,G: nothing posted to guild chat
-```
-
-### BT-7: the explicit user request, unchanged
+### BT-11: resolving an accent
 
 ```mermaid
 sequenceDiagram
     participant P as Player
+    participant S as SetVoiceOption
+    participant A as GetAvailableAccents
+    participant RP as ResolveAccent
+
+    P->>S: choose language, accent, race filter, or strength
+    S->>S: validate against languageByID / available list / enum
+    S->>A: if language or raceFilter changed, re-list
+    A->>A: filter by accent.language == selected language
+    A->>A: if raceFilter, intersect with raceAccents[GetPlayerRace()]
+    A->>A: Human also gets the regional non-English set
+    S->>S: chosen accent no longer valid, revert to "auto"
+    S->>P: RefreshOptions, UpdateRequestPreview, UpdateBroker
+    Note over RP: at message time, "auto" walks raceAccents in order<br/>and takes the first still-valid style, else nil
+```
+
+### BT-13: a hotkey press
+
+```mermaid
+sequenceDiagram
+    participant K as Bindings.xml
+    participant Q as RunQuickAction
     participant U as UI.lua
-    participant S as Core services
-    participant G as Guild chat
+    participant AL as Alerts.lua
 
-    P->>U: clicks Send to Guild
-    U->>U: activity non-empty?
-    U->>U: 20s since lastManualRequest?
-    U->>S: SendGuild RequestText directly
-    S->>G: pcall SendChatMessage, GUILD, 250 chars
-    U->>U: hide window, stamp lastManualRequest
+    K->>Q: ForeverGuildComms:RunQuickAction("rescan")
+    Q->>Q: return immediately unless A.initialized
+    alt alerts
+        Q->>U: ShowAlerts
+    else help
+        Q->>U: ShowRequest, composer only, nothing sent
+    else rescan
+        Q->>AL: ScanRecipes returns boolean
+        Q->>Q: print confirmation or "open a profession first"
+    end
+    Note over K,AL: no branch can reach SendGuild
+```
+
+### BT-12: a Titan menu write
+
+```mermaid
+sequenceDiagram
+    participant P as Player
+    participant T as TitanMenu
+    participant S as SetOption
+    participant O as Options panel
+
+    P->>T: right-click broker, pick a value
+    T->>S: SetOption(key, value)
+    S->>S: unknown key? reject
+    S->>S: outgoingMode? must be automatic or verify
+    S->>S: timing key? NormalizeTiming clamps and rounds
+    S->>S: boolean default? require a boolean
+    S->>S: otherwise reject, templates are Settings-only
+    S->>S: switching to automatic with a backlog? print a reminder
+    S->>O: RefreshOptions, UpdateBroker
 ```
 
 ## Event Routing Table
 
-All 14 events are registered on the single frame in `Core.lua`. `PLAYER_LOGIN` and
-`ADDON_LOADED` are handled before the `if not A.initialized then return end` gate; every
-other event is handled after it. **Unchanged in 0.2.0** — the new feature added no events.
+Unchanged across all three releases: 14 events, one frame. `PLAYER_LOGIN` and
+`ADDON_LOADED` are handled before the `if not A.initialized then return end` gate.
 
 | Event | Routed to | Guard |
 | --- | --- | --- |
@@ -389,40 +382,50 @@ other event is handled after it. **Unchanged in 0.2.0** — the new feature adde
 
 ## Integration Points
 
-- **External APIs**: None. The addon makes no network calls. Its only outbound channel is
+- **External APIs**: none. No network calls. The only outbound channel is
   `SendChatMessage(..., "GUILD")`.
-- **Databases**: None. Persistence is the client's SavedVariables mechanism:
-  `ForeverGuildCommsDB` (account-wide, `A.db`) and `ForeverGuildCommsCharDB` (per
-  character, `A.char`). The approval backlog is deliberately **not** persisted — staged
-  messages do not survive a reload, which is the right default for time-sensitive social
-  messages.
-- **Third-party Services**: LibDataBroker-1.1, reached through `LibStub` and supplied in
-  practice by Titan Panel. Declared `## OptionalDeps: Titan`, never required, detected at
-  runtime with the silent-failure form.
+- **Databases**: none. `ForeverGuildCommsDB` (account, `A.db`) and
+  `ForeverGuildCommsCharDB` (per character, `A.char`, now holding `voice` alongside
+  `recipes`, `myRoles`, `needRoles`). `A.pendingApprovals` remains deliberately
+  unpersisted.
+- **Third-party Services**: LibDataBroker-1.1 via `LibStub`, supplied by Titan Panel.
+  Still optional, still runtime-detected, still not embedded. Notably `TitanMenu.lua` does
+  **not** add a Titan dependency: it uses Blizzard's own `MenuUtil`, so no Titan menu
+  library is bundled.
+- **Release pipeline** *(new)*: `.github/workflows/package.yml` publishes a ZIP through
+  BigWigsMods/packager on a `v*` tag, using the built-in `GITHUB_TOKEN`. CurseForge,
+  WoWInterface, and Wago tokens are optional secrets. `.pkgmeta` excludes `install/`,
+  `tests/`, `PACKAGING.md`, `.github/`, and the promotional icon.
 
 ## Infrastructure Components
 
-- **CDK Stacks**: None.
-- **Deployment Model**: File copy. The packaged zip extracts to
-  `World of Warcraft\_classic_beta_\Interface\AddOns\ForeverGuildComms\`, and the client
-  loads `ForeverGuildComms.toc` at startup or `/reload`. The inner folder name must match
-  the TOC filename exactly.
-- **Networking**: None.
+- **CDK Stacks**: none.
+- **Deployment Model**: two paths now. A packaged ZIP extracted to
+  `Interface\AddOns\ForeverGuildComms\`, or the integrated Windows installer
+  (`install/Install-ForeverGuildComms.ps1`, 313 lines) which parses the TOC, validates
+  each entry against `^[A-Za-z0-9_-]+\.(lua|xml)$`, appends `Media/Icon.tga` and
+  `Bindings.xml` explicitly, skips identical files, backs up overwritten files to
+  `Interface\AddOnBackups`, and leaves SavedVariables untouched.
+- **CI**: GitHub Actions, tag-triggered packaging only. No test execution in CI.
+- **Networking**: none at runtime.
 
 ## Cross-Cutting Concerns
 
 | Concern | Mechanism | Location |
 | --- | --- | --- |
-| Authorization to act | `A:CanUse` requires the enabled flag and `IsInGuild()`, re-checked at drain and approval time | `Core.lua` |
-| Human confirmation | `outgoingMode == "verify"` stages instead of sending; the Send click is the confirmation and schedules nothing | `Core.lua`, `UI.lua` |
-| Guild identity binding | Every entry records the guild it was composed in; mismatches are discarded at drain and approval time | `Core.lua` |
-| Duplicate suppression | `A:IsDuplicate(key, cooldown)` over `A.eventsSeen` | `Core.lua`, inside `QueueGuild` and `AddAlert` |
-| Rate limiting | `DrainQueue` spacing; 20s manual-request limit; 30s roster throttle; 60s ticker. Approvals are intentionally not spaced | `Core.lua`, `UI.lua`, `Roster.lua` |
-| Backlog bounding | `pendingApprovals` capped at 30, dropping the oldest; `alerts` capped at 30 | `Core.lua`, `Alerts.lua` |
+| Authorization to act | `A:CanUse`, re-checked at drain and approval time | `Core.lua` |
+| Human confirmation | `outgoingMode == "verify"` stages; the Send click schedules nothing | `Core.lua`, `UI.lua` |
+| Guild identity binding | Each entry records its guild; mismatches discarded at both delivery points | `Core.lua` |
+| Duplicate suppression | `A:IsDuplicate` over `A.eventsSeen` | `Core.lua` |
+| Rate limiting | Drain spacing; 20s manual request; 30s roster throttle; 60s ticker. Approvals intentionally unspaced | `Core.lua`, `UI.lua`, `Roster.lua` |
+| **Settings validation** *(new)* | `A:SetOption` and `A:SetVoiceOption` are the only writers; both reject out-of-domain values and clamp timing | `Core.lua` |
+| **UI synchronisation** *(new)* | `A:RefreshOptions` replays the Settings control closures after any write from any surface | `Core.lua`, `Options.lua` |
+| **Byte-safe truncation** *(new)* | `A:ChatLimit` walks back off UTF-8 continuation bytes before cutting at 250 | `Core.lua` |
+| **Optional feature layering** *(new)* | `A:CommsText` falls back to `A:Format` when the voice modules are absent | `Core.lua` |
+| **Customized text protection** *(new)* | `A:VoiceText` returns the player's template verbatim when it differs from the default | `RaceProfiles.lua` |
 | Self-exclusion | `A:IsSelf` by GUID then normalized name then de-realmed name | `Core.lua` |
-| Error containment | `pcall` around `SendChatMessage`, reported through `A:Print` | `Core.lua` |
-| API volatility | Feature detection before every Blizzard call | all modules |
-| Input clamping | 250-char clamp in `Format`, in the entry builder, and again in `SendGuild`; `SetMaxLetters` on edit boxes | `Core.lua`, `UI.lua`, `Options.lua` |
-| Setting validation | An `outgoingMode` that is not exactly `"verify"` is forced to `"automatic"` on load; blank templates are refilled from defaults | `Core.lua` `A:Initialize` |
+| Error containment | `pcall` around `SendChatMessage`, reported via `A:Print` | `Core.lua` |
+| API volatility | Feature detection before every Blizzard call, including `MenuUtil` and `UnitRace` | all modules |
+| Setting normalization | Mode coerced to a known value; blank templates refilled; timing clamped; invalid voice reverted to `auto` | `Core.lua` `A:Initialize` |
 | Deferred work | `C_Timer.After` plus a boolean latch; one `C_Timer.NewTicker` | `Roster.lua`, `Alerts.lua`, `Tabard.lua`, `Core.lua` |
-| Observability | `A:Print` with a coloured addon tag; `/fgc status` now reports mode and backlog depth; broker label and tooltip | `Core.lua`, `Broker.lua` |
+| Observability | `A:Print` with a coloured tag; `/fgc status`; broker label and tooltip | `Core.lua`, `Broker.lua` |

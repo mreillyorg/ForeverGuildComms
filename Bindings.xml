@@ -1,0 +1,12 @@
+<Bindings>
+    <!-- Blizzard auto-loads Bindings.xml; do not list it in the TOC. -->
+    <Binding name="FGC_OPEN_ALERTS" header="FOREVERGUILDCOMMS" category="ADDONS">
+        if ForeverGuildComms then ForeverGuildComms:RunQuickAction("alerts") end
+    </Binding>
+    <Binding name="FGC_ASK_HELP" category="ADDONS">
+        if ForeverGuildComms then ForeverGuildComms:RunQuickAction("help") end
+    </Binding>
+    <Binding name="FGC_RESCAN_PROFESSION" category="ADDONS">
+        if ForeverGuildComms then ForeverGuildComms:RunQuickAction("rescan") end
+    </Binding>
+</Bindings>

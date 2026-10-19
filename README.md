@@ -1,16 +1,28 @@
-# Forever Guild Comms 0.4.0-beta
+# Forever Guild Comms 0.4.1-beta
+
+## Keybindings (v0.4.1-beta)
+
+Open **Options → Key Bindings → AddOns → Forever Guild Comms** and assign any keys you prefer. No key combinations are reserved or assigned by default.
+
+- **Open guild alerts** shows the private guild alert window (the same action as TitanPanel Quick actions → Show private alerts or `/fgc alerts`).
+- **Ask guild for help** opens the editable request composer. The shortcut **never sends a guild message**. You still press Send yourself.
+- **Rescan open profession** refreshes the learned-recipe cache for the profession window currently open. If no profession is open, it displays a reminder instead.
+
+These three bindings use WoW's standard `Bindings.xml`, which is **automatically loaded from the addon root and deliberately not included in the TOC**. The integrated Windows installer explicitly copies `Bindings.xml` along with the files listed in the TOC. BigWigsMods/packager includes it in its addon release. You must restart/reload the client after installing to register the new keybinding commands; a full restart may be required for the Key Bindings panel to display them.
+
+All three actions remain available through TitanPanel and their existing slash-command paths. Existing character keybinding choices are managed by WoW, not by the addon's SavedVariables.
 
 WoW: Forever 1.60.1 / Interface 16001 addon by Michael Reilly.
 
 ## Install (integrated Windows installer)
 
-1. **Extract All** from `ForeverGuildComms-0.4.0-beta.zip` into any convenient folder. Do not launch scripts directly from inside a compressed ZIP.
+1. **Extract All** from `ForeverGuildComms-0.4.1-beta.zip` into any convenient folder. Do not launch scripts directly from inside a compressed ZIP.
 2. Open **`ForeverGuildComms\install`** and double-click **`Install-ForeverGuildComms.cmd`**. Installation instructions are in `ForeverGuildComms\install\INSTALL-README.txt`.
 3. Choose your WoW Forever client folder if it is not found automatically. You can supply the client (`_classic_beta_`), `Interface`, or `Interface\AddOns` directory.
 4. Restart WoW Forever or enter `/reload`, then open **Settings > AddOns > Forever Guild Comms** (or `/fgc options`).
 5. If Titan Panel is installed, enable the **Guild Comms** Data Broker plugin.
 
-The integrated installer reads `ForeverGuildComms.toc` and copies **only the `.toc`, loadable Lua/XML files and `Media/Icon.tga`**. Files that are already identical are skipped. It never copies the README, tests, or `install` directory into the AddOns folder, and it does not replace your entire addon directory. Before overwriting addon files, it backs up those specific previous files to `Interface\AddOnBackups`. It leaves all character settings and SavedVariables untouched.
+The integrated installer reads `ForeverGuildComms.toc` and copies **only the `.toc`, loadable Lua files, the separately auto-loaded `Bindings.xml`, and `Media/Icon.tga`**. Files that are already identical are skipped. It never copies the README, tests, or `install` directory into the AddOns folder, and it does not replace your entire addon directory. Before overwriting addon files, it backs up those specific previous files to `Interface\AddOnBackups`. It leaves all character settings and SavedVariables untouched.
 
 **Manual installation:** Copy the `ForeverGuildComms` subfolder from the extracted archive into `World of Warcraft\_classic_beta_\Interface\AddOns\`. The required folder is `AddOns\ForeverGuildComms\ForeverGuildComms.toc`. Manual copying also copies the included documentation, tests and `install` folder unless you omit them yourself; neither is loaded by WoW.
 
@@ -20,7 +32,7 @@ This source archive now contains `.pkgmeta` and `.github/workflows/package.yml`
 for automatic packaging from GitHub tags. The BigWigs packager recognises
 Forever (`## Interface: 16001`) without manually overriding the game type.
 For CurseForge-style distribution, its release ZIP excludes `install/`,
-`tests/`, the promotional `Media/ProjectIcon.png` and other repository-only files, while retaining the in-game `Media/Icon.tga`. **This manual ZIP still includes
+`tests/`, the promotional `Media/ProjectIcon.png` and other repository-only files, while retaining the in-game `Media/Icon.tga` and `Bindings.xml`. **This manual ZIP still includes
 the integrated Windows installer.**
 
 To set up your own GitHub repository and publish releases, follow

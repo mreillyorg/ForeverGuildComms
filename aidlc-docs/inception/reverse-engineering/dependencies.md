@@ -1,239 +1,242 @@
 # Dependencies
 
-**Analysis target**: Forever Guild Comms **0.2.0-beta**
-**Supersedes**: the 0.1.0-beta pass of 2026-10-18
+**Analysis target**: Forever Guild Comms **0.4.1-beta**
+**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
 
-No external dependency was added, removed, or upgraded in 0.2.0. The dependency policy
-and the supply chain surface are unchanged. What changed is the internal graph: the
-approval backlog created new edges in both directions between `Core.lua` and `UI.lua`,
-and `tests/settings.lua` demonstrated that `Options.lua` is loadable offline after all.
+No runtime dependency was added, removed, or upgraded across 0.3.0, 0.4.0, or 0.4.1. The
+dependency policy and the supply chain surface are unchanged. What changed is the internal
+graph — four new modules and a second validating-writer hub — plus one release-time tool.
 
 ## Internal Dependencies
 
-The project is one package, so "internal dependencies" means the module dependency graph
-within it. Load order is declared by the TOC and is significant.
-
 ```mermaid
 flowchart TD
-    Core["Core.lua<br/>namespace, defaults, helpers,<br/>send queue, event frame"]
+    Core["Core.lua<br/>namespace, helpers, queue,<br/>setters, dispatcher"]
+    Lang["Languages.lua<br/>data"]
+    Acc["Accents.lua<br/>data"]
+    RP["RaceProfiles.lua<br/>voice logic"]
     Roster["Roster.lua"]
     Alerts["Alerts.lua"]
     Tabard["Tabard.lua"]
     UI["UI.lua"]
     Options["Options.lua"]
+    Titan["TitanMenu.lua"]
     Broker["Broker.lua"]
+    Bind["Bindings.xml"]
 
-    Roster -->|"hard: helpers and queue"| Core
-    Alerts -->|"hard: helpers and dedup"| Core
+    Lang -->|"hard: reads A.defaults.templates at load"| Core
+    Acc -->|"hard: namespace only"| Core
+    RP -->|"hard: accents, languages, char.voice"| Core
+    RP -->|"hard: A.accents, A.accentOrder"| Acc
+    RP -->|"hard: A.localeTemplates"| Lang
+    Roster -->|"hard: CommsText, QueueGuild, helpers"| Core
+    Alerts -->|"hard: helpers, dedup"| Core
     Tabard -->|"hard: CanUse"| Core
-    UI -->|"hard: Format, RoleText, SendGuild"| Core
-    Options -->|"hard: db and defaults"| Core
-    Broker -->|"hard: counts and commands"| Core
+    UI -->|"hard: CommsText, SendGuild, approvals"| Core
+    Options -->|"hard: db, defaults, SetOption"| Core
+    Titan -->|"hard: SetOption, SetVoiceOption,<br/>RunQuickAction, OpenSettings"| Core
+    Broker -->|"hard: counts, OpenTitanMenu"| Core
+    Bind -->|"hard: RunQuickAction via global"| Core
 
-    Core -.->|"guarded: BuildOptions"| Options
-    Core -.->|"guarded: BuildUI"| UI
-    Core -.->|"guarded: SetupRoster"| Roster
-    Core -.->|"guarded: CheckTabard"| Tabard
-    Core -.->|"guarded: TryBroker"| Broker
-    Core -.->|"guarded: OnGuildChat, ScheduleRecipeScan"| Alerts
-    Core -.->|"guarded: UpdateApprovalsUI,<br/>ShowApprovals (new)"| UI
-
-    Roster -.->|"guarded: UpdateBroker"| Broker
-    Roster -.->|"guarded: ClearApprovals (new)"| Core
+    Core -.->|"guarded: VoiceText"| RP
+    Core -.->|"guarded: BuildOptions, BuildUI,<br/>SetupRoster, CheckTabard, TryBroker"| Options
+    Core -.->|"guarded: UpdateApprovalsUI,<br/>ShowApprovals, UpdateRequestPreview"| UI
+    Core -.->|"guarded: ScanRecipes"| Alerts
+    Core -.->|"guarded: UpdateBroker"| Broker
+    Core -.->|"guarded: GetAvailableAccents"| RP
+    Roster -.->|"guarded: ClearApprovals"| Core
     Alerts -.->|"guarded: UpdateAlertsUI"| UI
-    Alerts -.->|"guarded: UpdateBroker"| Broker
-    Options -.->|"guarded: ShowAlerts, ShowRequest,<br/>ScanRecipes, UpdateRequestPreview"| UI
-    Broker -.->|"guarded by existence at click time"| UI
+    Broker -.->|"guarded: PopulateTitanMenu"| Titan
+    Titan -.->|"guarded: MenuUtil present"| Options
 ```
 
-Solid arrows are hard dependencies: the module cannot function without the target.
-Dashed arrows are guarded calls made through an existence check, so a missing target
-degrades the feature rather than raising an error.
+Solid arrows are hard dependencies. Dashed arrows are guarded calls through an existence
+check, so a missing target degrades the feature rather than raising an error.
 
 ### Text Alternative
 
 ```
-Hard (upward) dependencies - every feature module depends on Core:
-    Roster.lua  -> Core.lua
-    Alerts.lua  -> Core.lua
-    Tabard.lua  -> Core.lua
-    UI.lua      -> Core.lua
-    Options.lua -> Core.lua
-    Broker.lua  -> Core.lua
+Hard (upward) dependencies - everything depends on Core.lua:
+    Languages.lua    -> Core.lua   (reads A.defaults.templates at LOAD time)
+    Accents.lua      -> Core.lua   (namespace only)
+    RaceProfiles.lua -> Core.lua, Accents.lua, Languages.lua
+    Roster.lua       -> Core.lua
+    Alerts.lua       -> Core.lua
+    Tabard.lua       -> Core.lua
+    UI.lua           -> Core.lua
+    Options.lua      -> Core.lua
+    TitanMenu.lua    -> Core.lua
+    Broker.lua       -> Core.lua
+    Bindings.xml     -> Core.lua   (via _G.ForeverGuildComms, guarded)
 
-Guarded (downward and sideways) calls - optional at runtime:
-    Core.lua    -> Options, UI, Roster, Tabard, Broker, Alerts
-                   (new in 0.2.0: UpdateApprovalsUI, ShowApprovals in UI)
-    Roster.lua  -> Broker
-                   (new in 0.2.0: ClearApprovals in Core)
-    Alerts.lua  -> UI, Broker
-    Options.lua -> UI, Alerts
-    Broker.lua  -> UI, Core
-
-Unguarded cross-file calls (safe because Core.lua always loads first):
-    UI.lua      -> Core.lua: ApproveMessage, DismissMessage, ClearApprovals
+Guarded (downward) calls - optional at runtime:
+    Core.lua   -> RaceProfiles (VoiceText, GetAvailableAccents)
+    Core.lua   -> Options, UI, Roster, Tabard, Broker, Alerts
+    Roster.lua -> Core.lua (ClearApprovals)
+    Alerts.lua -> UI, Broker
+    Broker.lua -> TitanMenu (PopulateTitanMenu), UI, Core
+    TitanMenu  -> Options (fallback when MenuUtil is absent)
 ```
 
-### Dependency details
+### New dependency details
 
-#### `Roster.lua` depends on `Core.lua`
-- **Type**: Runtime, load-order-enforced
-- **Reason**: Uses `A:Key`, `A:IsSelf`, `A:Format`, `A:CanUse`, `A:Now`, and
-  `A:QueueGuild`. It also reads and writes shared state declared in `Core.lua`
-  (`A.pendingMessages`, `A.guildCount`, `A.onlineCount`, `A.db`). It cannot produce any
-  message without the queue.
+#### `Languages.lua` depends on `Core.lua` **at load time**
+- **Type**: Load-order-critical, not merely runtime.
+- **Reason**: `A.localeTemplates.en = A.defaults.templates` executes while the file loads,
+  so `A.defaults` must already exist. This is a stronger coupling than the other modules
+  have, and it is why `Languages.lua` sits immediately after `Core.lua` in the TOC.
 
-#### `Alerts.lua` depends on `Core.lua`
-- **Type**: Runtime, load-order-enforced
-- **Reason**: Uses `A:Key`, `A:IsSelf`, `A:CanUse`, `A:IsDuplicate`, and `A:Print`, and
-  writes `A.alerts` and `A.char.recipes`.
+#### `RaceProfiles.lua` depends on `Accents.lua` and `Languages.lua`
+- **Type**: Runtime, load-order-enforced.
+- **Reason**: `GetAvailableAccents` iterates `A.accentOrder` and indexes `A.accents`;
+  `VoiceText` indexes `A.localeTemplates`; `LocalizeRoleText` and
+  `LocalizeActivityType` index `A.localeRoleNames` and `A.localeActivityTypes`. All three
+  data tables must be populated first. The TOC order satisfies this.
+- **Note**: the reads are defensive — `(self.localeTemplates or {})` and
+  `(self.accentOrder or {})` — so a missing data module degrades to English defaults
+  rather than erroring.
 
-#### `Tabard.lua` depends on `Core.lua`
-- **Type**: Runtime, load-order-enforced
-- **Reason**: Uses `A:CanUse` and reads `A.db.tabardInCity` / `A.db.tabardOnExit`. The
-  lightest coupling of the feature modules: no queue, no identity helpers.
+#### `Core.lua` now depends optionally on `RaceProfiles.lua`
+- **Type**: Runtime, guarded.
+- **Reason**: `A:CommsText` calls `A:VoiceText` when it exists, and the voice block of
+  `A:Initialize` calls `A:GetAvailableAccents` behind `if self.GetAvailableAccents then`.
+  This is the seam that makes the entire voice feature removable: strip the three modules
+  from the TOC and `CommsText` falls back to plain `Format`.
+- **Verified by test**: `tests/keybindings.lua` loads only `Core.lua` and `Alerts.lua` and
+  still works, exercising exactly this fallback path.
 
-#### `UI.lua` depends on `Core.lua`
-- **Type**: Runtime, load-order-enforced
-- **Reason**: Uses `A:Format`, `A:RoleText`, `A:CanUse`, `A:Now`, `A:Print`, and
-  `A:SendGuild`, and reads `A.alerts`, `A.classRoles`, `A.roleOrder`, `A.roleNames`,
-  `A.char.myRoles`, `A.char.needRoles`, `A.playerClass`, `A.playerName`, and
-  `A.db.templates.help`.
-- **0.2.0 addition**: the review window calls `A:ApproveMessage`, `A:DismissMessage`, and
-  `A:ClearApprovals`, and reads `A.pendingApprovals`. These three calls are **unguarded**,
-  which is correct — they live in `Core.lua`, which always loads first.
+#### `TitanMenu.lua` depends on `Core.lua`'s setters
+- **Type**: Runtime, unguarded (safe — `Core.lua` always loads first).
+- **Reason**: every menu control is bound to `A:SetOption` or `A:SetVoiceOption`, and the
+  quick actions to `A:RunQuickAction`. The menu holds no settings logic of its own, which
+  is the point: two UIs, one validator.
 
-#### `Core.lua` now calls back into `UI.lua` for the backlog
-- **Type**: Runtime, guarded
-- **Reason**: Every mutation of `A.pendingApprovals` (`StageApproval`, `ApproveMessage`,
-  `DismissMessage`, `ClearApprovals`) calls `UpdateApprovalsUI` and `UpdateBroker`
-  through existence checks, and `StageApproval` also calls `ShowApprovals`. This is a new
-  bidirectional relationship: `Core.lua` owns the data and `UI.lua` owns its presentation,
-  with the guard keeping `Core.lua` independent.
+#### `Broker.lua` depends optionally on `TitanMenu.lua`
+- **Type**: Runtime, guarded by load order and by `MenuUtil` detection inside
+  `OpenTitanMenu`.
+- **Reason**: the broker's right-click routes into the nested menu. `TitanMenu.lua` loads
+  before `Broker.lua`, so the method exists; if the client lacks `MenuUtil`, the menu
+  prints a note and opens Settings instead.
 
-#### `Roster.lua` gained a dependency on the backlog
-- **Type**: Runtime, guarded
-- **Reason**: the guild-change branch of `OnRosterEvent` calls
-  `if self.ClearApprovals then self:ClearApprovals() end`. Guarded despite
-  `ClearApprovals` living in `Core.lua`, consistent with the file's existing style.
+#### `Bindings.xml` depends on the global namespace
+- **Type**: Runtime, guarded.
+- **Reason**: each binding body is `if ForeverGuildComms then ForeverGuildComms:RunQuickAction(...) end`.
+  The guard matters because the client may process a key press before the addon has
+  published its namespace, and `RunQuickAction` itself adds a second gate on
+  `A.initialized`.
 
-#### `Options.lua` depends on `Core.lua`
-- **Type**: Runtime, load-order-enforced
-- **Reason**: Reads and writes `A.db` and every key in `A.defaults`. Also calls
-  `A:ShowAlerts`, `A:ShowRequest`, `A:ScanRecipes`, and `A:UpdateRequestPreview` from its
-  quick-action buttons; because it loads after `UI.lua` and `Alerts.lua`, those targets
-  exist in practice, and `UpdateRequestPreview` is additionally guarded.
+### Load order constraints, consolidated
 
-#### `Broker.lua` depends on `Core.lua`
-- **Type**: Runtime, load-order-enforced
-- **Reason**: Reads `A.onlineCount`, `A.guildCount`, and `A.alerts` for its label and
-  tooltip, and calls `A:OpenSettings`, `A:ShowRequest`, and `A:ShowAlerts` from its click
-  handler.
+`Core.lua` must be first. Beyond that, three ordering requirements now exist where 0.2.0
+had one:
 
-#### `Core.lua` depends on nothing internal
-- **Type**: None
-- **Reason**: It only reaches later modules through existence checks in `A:Initialize`
-  and the event handler. This is what makes every other file optional from its point of
-  view, and what allows `tests/smoke.lua` to load three modules in isolation.
+1. `Languages.lua` after `Core.lua` — load-time read of `A.defaults.templates`.
+2. `RaceProfiles.lua` after both `Accents.lua` and `Languages.lua` — needs their data.
+3. `Roster.lua` and `UI.lua` after `RaceProfiles.lua` — so `A:CommsText` resolves to the
+   voice path rather than silently falling back. Not an error if violated, but the feature
+   would appear not to work.
 
-#### The four harnesses depend on the modules they load
-- **Type**: Test only, not shipped
-- **Reason**: each calls `loadfile(base .. "<Module>.lua")("ForeverGuildComms", A)`.
+Soft couplings that happen to hold: `Options.lua` loads after `UI.lua` and `Alerts.lua`,
+so its quick-action buttons bind to existing methods; `Broker.lua` loads after
+`TitanMenu.lua`.
 
-| Harness | Loads |
-| --- | --- |
-| `tests/syntax.lua` | all seven modules, compiled but never executed |
-| `tests/smoke.lua` | `Core.lua`, `Roster.lua`, `Alerts.lua` |
-| `tests/verify.lua` | `Core.lua` only |
-| `tests/settings.lua` | `Core.lua`, `Options.lua` |
+### Test dependencies
 
-**Revised offline-testability finding.** The 0.1.0 pass recorded, following the project's
-own `testing.md`, that only `Core.lua`, `Roster.lua`, and `Alerts.lua` could load
-offline, because the rest need real frame, Settings, popup, and LibStub APIs. That is no
-longer accurate. `tests/settings.lua` loads and exercises `Options.lua` by supplying a
-metatable-driven fake widget layer and a stub `Settings` table, and `tests/syntax.lua`
-compiles all seven modules. The remaining genuinely untested modules are `UI.lua`,
-`Tabard.lua`, and `Broker.lua`, and the same technique would reach at least the first two.
-The steering document has not been updated to match; see `code-quality-assessment.md`.
+| Harness | Loads | Notes |
+| --- | --- | --- |
+| `tests/syntax.lua` | all 11 modules | Compiles only; never executes |
+| `tests/smoke.lua` | Core, Roster, Alerts | Stubs `QueueGuild` and `AddAlert` |
+| `tests/verify.lua` | Core | Drives the real queue and backlog |
+| `tests/settings.lua` | Core, Options | Synthetic widget layer |
+| `tests/timing.lua` | Core, Languages, Accents, RaceProfiles | Loads the voice modules so `CommsText` takes the real path |
+| `tests/titanmenu.lua` | Core, Options, TitanMenu, Broker | Synthetic widget and menu-node layers |
+| `tests/voice.lua` | Core, Languages, Accents, RaceProfiles | The voice layer's dedicated harness |
+| `tests/keybindings.lua` | Core, Alerts | Deliberately omits the voice modules, proving the `CommsText` fallback |
+| `tests/icon.lua` | none | Reads the TOC, `Broker.lua`, `Options.lua`, the installer, and both textures as files |
 
-### Load order constraint
-
-`Core.lua` must be listed first in the TOC. The other six could in principle load in any
-order relative to each other, since all cross-module calls are either guarded or happen
-after `PLAYER_LOGIN`. Two soft couplings nonetheless depend on the current order:
-
-- `Options.lua` loads after `UI.lua` and `Alerts.lua`, so its quick-action buttons bind to
-  methods that already exist. Three of the four are unguarded.
-- `UI.lua`'s `BuildRequestUI` reads `A.char.myRoles` and `A.playerClass`, both set in
-  `A:Initialize` before `BuildUI` is called, so the ordering inside `Initialize` matters
-  more than the TOC order here.
+**Offline testability, updated again.** The 0.1.0 pass recorded that only `Core.lua`,
+`Roster.lua`, and `Alerts.lua` could load offline. The 0.2.0 pass corrected that to
+include `Options.lua`. It is now broader still: `TitanMenu.lua` and `Broker.lua` are both
+loaded and exercised by `tests/titanmenu.lua`, the three voice modules by `voice.lua` and
+`timing.lua`, and `Bindings.xml` by `keybindings.lua`. **Only `Tabard.lua` has no harness
+that loads it**, and `UI.lua` is loaded but its windows are stubbed rather than driven.
+`.kiro/steering/testing.md` still asserts the original, narrower claim; see
+`code-quality-assessment.md`.
 
 ## External Dependencies
 
 ### WoW Forever client API
 - **Version**: game 1.60.1, TOC interface `16001`
-- **Purpose**: the entire runtime. Events, frames, timers, chat, roster, trade skill,
-  map, inventory, settings, and persistence.
-- **Dependency type**: Platform. Non-optional and non-substitutable.
-- **License**: Proprietary (Blizzard Entertainment). Consumed as a host API, not
-  redistributed.
-- **Risk**: The client is in beta and Blizzard is still changing it. The codebase
-  mitigates this by feature-detecting every API before calling it, including ones
-  believed to exist, and by degrading with an `A:Print` note instead of erroring. The
-  Forever default frames have already been reskinned and reorganized once, which is why
-  the addon does not anchor to or restyle Blizzard's unit frames or minimap header.
+- **Purpose**: the entire runtime.
+- **Dependency type**: Platform. Non-optional, non-substitutable.
+- **License**: Proprietary (Blizzard). Consumed as a host API, not redistributed.
+- **New surfaces consumed this span**: `MenuUtil.CreateContextMenu`, `UnitRace`,
+  `UIRadioButtonTemplate`, and the `Bindings.xml` / `BINDING_*` key-binding mechanism.
+- **Risk**: the client is in beta and still changing. Mitigated as before by
+  feature-detecting every call. `MenuUtil` is the clearest example: absent it, the menu
+  degrades to the Settings page with a printed explanation. `UnitRace` is guarded and an
+  unknown race yields only `auto` and `none`.
 
 ### LibDataBroker-1.1
-- **Version**: unpinned. Whatever copy Titan Panel supplies (Titan 9.3.5 includes one).
-- **Purpose**: the optional status indicator in `Broker.lua`.
-- **Dependency type**: **Optional, runtime-detected, not embedded.** Declared
-  `## OptionalDeps: Titan` in the TOC, never `RequiredDeps`.
-- **License**: LibDataBroker-1.1 is distributed under a permissive license by its authors;
-  since no copy is vendored here, this project ships none of it and inherits no
-  obligation.
-- **Risk**: Low. The lookup uses the silent-failure form
-  `LibStub("LibDataBroker-1.1", true)` followed by `if not lib then return end`, so the
-  addon is fully functional with no broker present. No version is asserted, which means a
-  future incompatible LDB revision would surface as a runtime error in the data object
-  rather than a clean refusal — an accepted trade given the stability of the 1.1
-  interface.
+- **Version**: unpinned; whatever Titan Panel supplies.
+- **Purpose**: the optional status indicator.
+- **Dependency type**: **Optional, runtime-detected, not embedded.** `## OptionalDeps: Titan`,
+  never `RequiredDeps`.
+- **License**: permissive; no copy is vendored here, so this project ships none of it.
+- **Risk**: low. `LibStub("LibDataBroker-1.1", true)` plus an explicit nil guard. No
+  version is asserted.
+- **Worth recording**: the 0.3.0 nested menu was the obvious moment to take on a Titan
+  menu-library dependency, and the project declined, using Blizzard's `MenuUtil` instead.
+  `TitanMenu.lua`'s header comment states this explicitly. The no-hard-dependency policy
+  survived a feature that would plausibly have broken it.
 
 ### LibStub
 - **Version**: unpinned, supplied by whichever addon loaded it first.
-- **Purpose**: the lookup mechanism for LibDataBroker.
 - **Dependency type**: Optional, guarded by `LibStub and LibStub(...)`.
 - **License**: public domain.
-- **Risk**: Low, same mitigation as above.
+
+### BigWigsMods/packager **(new, release-time only)**
+- **Version**: pinned to the `@v2` major tag.
+- **Purpose**: builds and publishes the release ZIP from a `v*` tag.
+- **Dependency type**: CI only. Not shipped, not required to build or run the addon.
+- **License**: open source, used as a GitHub Action.
+- **Risk**: low but non-zero. The `@v2` pin is a moving major tag rather than a commit
+  SHA, so an upstream change within v2 would be picked up automatically. Standard practice
+  for Actions, and the blast radius is a failed or malformed release rather than anything
+  reaching users silently. The workflow also grants `contents: write`, which is the
+  minimum needed to attach a release asset.
+
+### actions/checkout **(new, release-time only)**
+- **Version**: `@v4`, with `fetch-depth: 0` for tag and changelog access.
+- **Dependency type**: CI only.
 
 ### Standalone Lua 5.1 interpreter
-- **Version**: 5.1.5 recommended
-- **Purpose**: running `tests/smoke.lua` outside the game.
-- **Dependency type**: Development only. Not shipped, not required to use the addon.
-- **License**: MIT (Lua).
-- **Risk**: Environmental. No Windows package manager carries 5.1.5, so it is installed
-  manually from the LuaBinaries distribution, keeping `lua5.1.dll` and the bundled
-  `Microsoft.VC80.CRT\` folder beside `lua5.1.exe`. LuaJIT 2.1 can substitute but is a
-  superset, so test code must avoid `ffi`, `bit`, `jit`, `table.new`, and `goto`. Lua 5.4
-  is explicitly unsuitable because of the integer/float split and the relocation of
-  `unpack`. If no interpreter is available, the project's rule is to say so rather than
-  report the suite as passing.
+- **Version**: 5.1.5 recommended.
+- **Purpose**: running the nine harnesses.
+- **Dependency type**: Development only.
+- **License**: MIT.
+- **Risk**: environmental. Not installed on the current machine, so no harness was
+  executed during this pass.
 
 ## Dependency Policy
 
-Three constraints recorded in the project's own steering documents, all currently upheld
-by the code:
+Three constraints from the project's steering documents, all still upheld:
 
-1. **No hard library dependencies.** Titan and LibDataBroker are optional and detected at
-   runtime; the addon must work fully without them.
-2. **No embedded libraries.** Nothing is vendored. `.gitignore` additionally blocks
-   compiled Lua, archives, object files, shared objects, and executables.
-3. **No addon-to-addon comms.** `C_ChatInfo.SendAddonMessage` is not used and is a stated
-   non-goal.
+1. **No hard library dependencies.** Titan and LibDataBroker remain optional and
+   runtime-detected. Actively tested this span and held.
+2. **No embedded libraries.** Nothing vendored. `.gitignore` blocks packager output and
+   local archives.
+3. **No addon-to-addon comms.** `C_ChatInfo.SendAddonMessage` is still unused.
 
 ## Supply Chain Surface
 
-Effectively zero. There is no package manager, no lockfile, no transitive dependency
-tree, and no build-time code fetched from a registry. The only third-party code that can
-enter the process is LibDataBroker, and only if the user has separately installed an
-addon that provides it. This removes the usual typosquatting and dependency-confusion
-risk entirely.
+Still near zero **at runtime**: no package manager, no lockfile, no transitive tree, and
+no code fetched from a registry into the shipped addon. The only third-party code that can
+enter the game process is LibDataBroker, and only if the user separately installed an
+addon providing it.
+
+A small **release-time** surface now exists: two pinned GitHub Actions
+(`actions/checkout@v4`, `BigWigsMods/packager@v2`) run in CI with `contents: write`. Both
+are major-tag pins rather than SHA pins. This is conventional and the exposure is limited
+to the release artifact, but it is the first point at which third-party code participates
+in producing what users download.
