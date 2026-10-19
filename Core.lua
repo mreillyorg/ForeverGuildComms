@@ -6,7 +6,7 @@ BINDING_HEADER_FOREVERGUILDCOMMS = "Forever Guild Comms"
 BINDING_NAME_FGC_OPEN_ALERTS = "Open guild alerts"
 BINDING_NAME_FGC_ASK_HELP = "Ask guild for help"
 BINDING_NAME_FGC_RESCAN_PROFESSION = "Rescan open profession"
-A.version = "0.4.1-beta"
+A.version = "0.4.3-beta"
 -- These language preferences are per character; old account-wide settings stay intact.
 A.voiceDefaults = {language="en", accent="none", raceFilter=true, accentStrength="subtle"}
 A.defaults = {
@@ -15,6 +15,7 @@ A.defaults = {
     greetLogin = true,
     greetJoin = true,
     congratulateLevel = true,
+    randomizeMessages = true, -- rotate curated built-in templates; custom messages are unchanged
     craftingAlerts = true,
     groupAlerts = true,
     tabardInCity = true,
@@ -53,6 +54,11 @@ function A:NormalizeTiming(key, value, fallback)
     return math.max(limits.min, math.min(limits.max, math.floor(n + 0.5)))
 end
 A.eventsSeen = {}
+A.lastEventPrune = nil
+-- Keep deduplication history for the longest supported cooldown.
+-- A shorter retention would re-admit events if a user increases loginCooldown.
+A.eventRetentionSeconds = A.timingLimits.loginCooldown.max
+A.eventPruneIntervalSeconds = 60
 A.alerts = {}
 A.onlineCount = 0
 A.guildCount = 0
@@ -117,8 +123,8 @@ function A:Format(template, vars)
 end
 -- Existing tests and optional stripped-down installs can still use the
 -- default formatter if the new language modules are not present.
-function A:CommsText(kind, vars)
-    if self.VoiceText then return self:VoiceText(kind, vars) end
+function A:CommsText(kind, vars, preview)
+    if self.VoiceText then return self:VoiceText(kind, vars, preview) end
     return self:Format(self.db.templates[kind], vars)
 end
 function A:CanUse()
@@ -127,9 +133,26 @@ end
 function A:Now()
     return GetTime and GetTime() or 0
 end
+-- Prune transient deduplication keys periodically while new events arrive.
+-- All current callers use cooldowns <= loginCooldown.max (3600s). Keeping
+-- records for that full window preserves deduplication if settings increase.
+function A:PruneEventsSeen(now)
+    now = now or self:Now()
+    if self.lastEventPrune and now >= self.lastEventPrune
+        and now - self.lastEventPrune < self.eventPruneIntervalSeconds then return end
+    for key, seenAt in pairs(self.eventsSeen) do
+        if type(seenAt) ~= "number" or seenAt > now
+            or now - seenAt >= self.eventRetentionSeconds then
+            self.eventsSeen[key] = nil
+        end
+    end
+    self.lastEventPrune = now
+end
 function A:IsDuplicate(key, cooldown)
     local now = self:Now()
-    if self.eventsSeen[key] and now - self.eventsSeen[key] < (cooldown or 90) then return true end
+    self:PruneEventsSeen(now)
+    local seenAt = self.eventsSeen[key]
+    if seenAt and now >= seenAt and now - seenAt < (cooldown or 90) then return true end
     self.eventsSeen[key] = now
     return false
 end
@@ -258,6 +281,7 @@ function A:SetOption(key, value)
         self:Print("Earlier pending messages still need approval or dismissal. /fgc verify")
     end
     if changed then
+        if key == "randomizeMessages" and self.UpdateRequestPreview then self:UpdateRequestPreview() end
         self:RefreshOptions()
         if self.UpdateBroker then self:UpdateBroker() end
     end
@@ -412,6 +436,11 @@ function A:Initialize()
     if self.BuildOptions then self:BuildOptions() end
     if self.BuildUI then self:BuildUI() end
     if self.SetupRoster then self:SetupRoster() end
+    -- Prune stale event keys even during quiet guild sessions. The lightweight
+    -- activity-triggered sweep in IsDuplicate handles busy sessions promptly.
+    if C_Timer and C_Timer.NewTicker then
+        C_Timer.NewTicker(300, function() self:PruneEventsSeen() end)
+    end
     if self.CheckTabard then C_Timer.After(3, function() self:CheckTabard(true) end) end
     if self.TryBroker then self:TryBroker() end
     self:Print("Loaded. /fgc for alerts, /fgc verify to review messages, /fgc options for settings.")

@@ -1,11 +1,25 @@
 # Dependencies
 
-**Analysis target**: Forever Guild Comms **0.4.1-beta**
-**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
+**Analysis target**: Forever Guild Comms **0.4.3-beta**
+**Supersedes**: the 0.4.1-beta pass of 2026-10-19T02:40:00Z
 
-No runtime dependency was added, removed, or upgraded across 0.3.0, 0.4.0, or 0.4.1. The
-dependency policy and the supply chain surface are unchanged. What changed is the internal
-graph — four new modules and a second validating-writer hub — plus one release-time tool.
+No runtime dependency was added, removed, or upgraded across 0.3.0 through 0.4.3. The
+dependency policy and the supply chain surface are unchanged. The internal graph gained one
+module this span.
+
+### `MessageVariants.lua` — notably decoupled
+
+It is the only data module that does **not** depend on the others. `Languages.lua` reads
+`A.defaults.templates` at load, and `RaceProfiles.lua` indexes `A.accents`,
+`A.accentOrder`, and `A.localeTemplates`. By contrast `A:ChooseMessageTemplate` receives
+the base template and the already-resolved accent as arguments and reads only its own two
+tables, so its only hard dependency is `Core.lua` for the namespace.
+
+The call site in `RaceProfiles.lua` is guarded (`if ... and self.ChooseMessageTemplate`),
+so the module is independently removable: strip it from the TOC and message wording simply
+stops varying while everything else continues. That makes the voice feature a three-layer
+stack where each layer above `Core.lua` can be dropped — translation, styling, and
+variation — rather than one monolith.
 
 ## Internal Dependencies
 

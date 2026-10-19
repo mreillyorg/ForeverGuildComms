@@ -201,6 +201,7 @@ function A:BuildOptions()
     toggle("greetLogin", "Greet guild members when they log in", "Only offline -> online changes after the initial guild roster snapshot.")
     toggle("greetJoin", "Welcome newly joined guild members", "Uses the localized guild-join system message; duplicate protected.")
     toggle("congratulateLevel", "Congratulate guild members on leveling", "Only online-to-online level changes. Your character is ALWAYS excluded.")
+    toggle("randomizeMessages", "Vary built-in message wording", "Shuffle greetings, welcomes, congratulations and help requests without immediate repeats. Custom messages remain unchanged.")
     timingOption("messageSpacing", "Automatic message spacing", "Minimum gap between automatic guild messages")
     timingOption("loginCooldown", "Login greeting cooldown", "Wait before greeting the same guildmate again; 0 disables the cooldown")
     section("Private guild requests")
@@ -225,7 +226,7 @@ function A:BuildOptions()
     y = y - 33
     local voicePreview = MakeLabel(content, "", 19, y, 495, "GameFontHighlightSmall")
     controls[#controls+1] = function()
-        voicePreview:SetText("Preview: " .. A:CommsText("login", {name="Adventurer", level=30}))
+        voicePreview:SetText("Preview: " .. A:CommsText("login", {name="Adventurer", level=30}, true))
     end
     controls[#controls]()
     y = y - 48

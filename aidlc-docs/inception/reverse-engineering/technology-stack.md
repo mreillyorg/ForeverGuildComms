@@ -1,18 +1,24 @@
 # Technology Stack
 
-**Analysis target**: Forever Guild Comms **0.4.1-beta**
-**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
+**Analysis target**: Forever Guild Comms **0.4.3-beta**
+**Supersedes**: the 0.4.1-beta pass of 2026-10-19T02:40:00Z
 
-The runtime stack is unchanged: still plain Lua 5.1 against the Blizzard addon API, with
-no runtime dependency added. What changed is the surrounding tooling — a release pipeline,
-a Windows installer, and five more offline harnesses — plus three new Blizzard API
-surfaces consumed.
+The runtime stack is unchanged: still plain Lua 5.1 against the Blizzard addon API, with no
+runtime dependency added. 0.4.2 and 0.4.3 introduced no new tooling and consumed no new
+Blizzard API surface. The only additions are source growth (one new data module), two more
+offline harnesses, and one new standard-library usage.
+
+**A note on `math.random`.** `A:ChooseMessageTemplate` is the first code in the project to
+depend on randomness. It never calls `math.randomseed`, so the sequence depends on whatever
+state the client's Lua provides. For message-wording variety this is immaterial — the
+shuffle bag's exhaust-before-repeat property holds regardless of distribution quality — but
+it is recorded here so a future reader does not assume seeding happens elsewhere.
 
 ## Programming Languages
 
 | Language | Version | Usage |
 | --- | --- | --- |
-| Lua | 5.1 | The addon: 1,733 lines across 11 modules, up from 1,097 across 7. Plain Lua 5.1 as embedded by the WoW client; no transpiler, no build step, no external libraries. The nine offline harnesses target the same version |
+| Lua | 5.1 | The addon: 2,022 lines across 12 modules, up from 882 across 7 at 0.1.0. Plain Lua 5.1 as embedded by the WoW client; no transpiler, no build step, no external libraries. The eleven offline harnesses target the same version |
 | XML | - | `Bindings.xml`, 12 lines. Blizzard's declarative key-binding format. The only non-Lua shipped code |
 | PowerShell | 5.1+ | `install/Install-ForeverGuildComms.ps1`, 313 lines. Development and distribution only, never loaded by the client |
 | Batch | - | `install/Install-ForeverGuildComms.cmd`, 31 lines. Double-click launcher for the installer |
@@ -174,6 +180,8 @@ three currently read `0.4.1-beta`.
 | `tests/voice.lua` | Core + 3 voice modules | Languages, race filtering, custom-template precedence, UTF-8 truncation, invalid-value rejection |
 | `tests/keybindings.lua` | Core, Alerts | The real `Bindings.xml` handlers, opt-in guarantee, no-send guarantee |
 | `tests/icon.lua` | none; reads files | Icon wiring across four files plus texture size sanity |
+| `tests/tabard_dedup.lua` | Core, Tabard | **New.** The login-check ordering race, per-stay prompt dedup, city exit and re-entry, and the dedup-cache lifecycle including malformed and future timestamps and the idle ticker |
+| `tests/variations.lua` | Core + 4 data/voice modules + UI | **New.** Shuffle bags across all 8 languages and all 29 accents, variant completeness, custom-template override, non-consuming preview, preview/send stability |
 
 Interpreter notes recorded by the project: LuaJIT 2.1 works but is a superset, so test
 code must not depend on its extensions. Lua 5.4 is explicitly unsuitable. On Windows no

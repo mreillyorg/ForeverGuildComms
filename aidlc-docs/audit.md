@@ -95,3 +95,28 @@ Timestamps use ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ).
 **Context**: INCEPTION - Reverse Engineering follow-up. Closes the number-one recommendation of both the 0.2.0 and 0.4.1 passes. Resolved count for the 0.2.0 recommendations moves from 6 to 7 of 17; the top open item is now wiring the nine harnesses into CI, since packaging is automated on a tag while testing is not.
 
 ---
+
+## Reverse Engineering - Third Rerun Requested
+**Timestamp**: 2026-10-19T03:10:00Z
+**User Input**: "using aidlc, please run another reverse-engineering pass to resync changes"
+**AI Response**: "Explicit user rerun request. Confirmed real change before regenerating: shipped Lua 1,733 -> 2,022 lines, a new MessageVariants.lua module (229 lines), two new harnesses (tabard_dedup.lua, variations.lua), and modifications to Core.lua, Options.lua, RaceProfiles.lua, Tabard.lua, TitanMenu.lua, UI.lua, tests/syntax.lua, the TOC, README, PACKAGING.md and the installer. Tabard.lua changed for the first time since 0.1.0. Re-executing all 13 steps."
+**Context**: INCEPTION - Reverse Engineering (third rerun). All prior work through 0.4.1-beta is now committed and pushed at 115aae3; the change set under analysis is uncommitted working-tree work.
+
+---
+
+## Reverse Engineering - Third Rerun Complete
+**Timestamp**: 2026-10-19T03:20:00Z
+**User Input**: (no further user input during this stage)
+**AI Response**: "Re-executed all 13 steps against 0.4.3-beta. Read MessageVariants.lua, tests/tabard_dedup.lua and tests/variations.lua in full, plus the complete working-tree diff for Core.lua, Tabard.lua, RaceProfiles.lua, UI.lua, Options.lua, TitanMenu.lua, tests/syntax.lua, the TOC and README.md. Re-measured every count and counted the 204 curated variants by pattern match rather than by hand after an initial hand-count proved wrong. Regenerated all nine artifacts and rewrote aidlc-state.md with a four-run history."
+**Context**: INCEPTION - Reverse Engineering (third rerun). Shipped Lua 1,733 -> 2,022 lines across 11 -> 12 modules; methods 62 -> 64; business transactions 13 -> 14; harnesses 9 -> 11 and 589 -> 799 lines (34% -> 40% of shipped source). Registered events have now held at 14 on one dispatcher across all six releases. New in 0.4.2: MessageVariants.lua with 68 locale and 136 accent variants selected by a shuffle bag with cross-bag memory, the randomizeMessages setting, a preview parameter threaded through CommsText/VoiceText so Settings samples do not consume a draw, and a fingerprinted draft cache in A:RequestText so the help composer cannot send wording that differs from its preview. New in 0.4.3: A:PruneEventsSeen and a restructured A:CheckTabard.
+**Findings**: 3 of the 19 prior recommendations resolved, 1 partly. Critically, the two oldest findings in the project - both first raised against 0.1.0 and carried through three passes - are now closed: the tabard login-check ordering race and the unbounded A.eventsSeen cache. Tabard.lua was also the last module with no harness, so every module is now covered. Four new findings, the most notable being that randomizeMessages defaults to true and is therefore the first setting whose default changes existing user output on upgrade, departing from the convention the project had followed for outgoingMode and accent. The top recommendation is unchanged for a third consecutive pass: nothing in CI runs the harnesses. No code was executed; no Lua interpreter installed.
+
+---
+
+## Reverse Engineering - Approval Gate (third rerun)
+**Timestamp**: 2026-10-19T03:21:00Z
+**User Input**: (awaiting response)
+**AI Response**: "Presented the Reverse Engineering completion message with the two standard options. Per the user's consistent scoping across all four runs, the workflow stops here and will NOT auto-advance to Requirements Analysis without a further instruction."
+**Context**: INCEPTION - Reverse Engineering, Step 13. Awaiting explicit user approval. Supersedes the unanswered gates of 2026-10-18T23:53Z, 2026-10-19T00:53Z and 2026-10-19T02:41Z.
+
+---

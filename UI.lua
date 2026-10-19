@@ -255,19 +255,34 @@ function A:RequestText()
     local activity = (self.activityEdit:GetText() or ""):match("^%s*(.-)%s*$")
     if activity == "" then activity = "[activity]" end
     local custom = self.db.templates.help ~= self.defaults.templates.help
-    return self:CommsText("help", {
+    local vars = {
         activity = activity,
         type = custom and self.GetActivityType() or self:LocalizeActivityType(self.GetActivityType()),
         myroles = custom and self:RoleText(self.char.myRoles, "Flexible") or self:LocalizeRoleText(self.char.myRoles, "flexible"),
         needed = custom and self:RoleText(self.char.needRoles, "Any role") or self:LocalizeRoleText(self.char.needRoles, "any"),
         name = self.playerName,
-    })
+    }
+    local voice = self.char.voice or {}
+    local fingerprint = table.concat({
+        tostring(self.db.templates.help), tostring(self.db.randomizeMessages),
+        tostring(voice.language), tostring(voice.accent),
+        tostring(voice.raceFilter), tostring(voice.accentStrength),
+        tostring(vars.activity), tostring(vars.type), tostring(vars.myroles),
+        tostring(vars.needed), tostring(vars.name),
+    }, "\031")
+    -- The Send button must send exactly the wording shown in the preview.
+    -- Redraws/reopened Settings should never silently change a pending draft.
+    if not self.requestDraft or self.requestDraft.fingerprint ~= fingerprint then
+        self.requestDraft = {fingerprint=fingerprint, text=self:CommsText("help", vars)}
+    end
+    return self.requestDraft.text
 end
 function A:UpdateRequestPreview()
     if self.requestPreview and self.db then self.requestPreview:SetText(self:RequestText()) end
 end
 function A:ShowRequest()
     if not self.requestFrame then return end
+    self.requestDraft = nil -- new opening, fresh format choice
     self:UpdateRequestPreview()
     self.requestFrame:Show()
 end
@@ -281,6 +296,7 @@ function A:SendHelpRequest()
     end
     if self:SendGuild(self:RequestText()) then
         self.lastManualRequest = self:Now()
+        self.requestDraft = nil
         self.requestFrame:Hide()
     end
 end

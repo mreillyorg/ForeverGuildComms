@@ -2,7 +2,7 @@
 
 The addon is configured for [BigWigsMods/packager](https://github.com/BigWigsMods/packager)
 and WoW Forever beta (**Interface `16001`**). The in-game addon version remains
-**`0.4.1-beta`**. The packager recognises the Forever game type from the TOC;
+**`0.4.3-beta`**. The packager recognises the Forever game type from the TOC;
 no `-g` override is required.
 
 ## GitHub repository layout
@@ -20,6 +20,7 @@ to your GitHub repository root. For example, this must exist:
   Languages.lua
   Accents.lua
   RaceProfiles.lua
+  MessageVariants.lua
   Bindings.xml
   Roster.lua
   Alerts.lua
@@ -51,8 +52,8 @@ The `.pkgmeta` file and `.github/workflows` directory must be committed.
    Git repository after committing:
 
    ```bash
-   git tag -a v0.4.1-beta -m "ForeverGuildComms 0.4.1 beta"
-   git push origin v0.4.1-beta
+   git tag -a v0.4.3-beta -m "ForeverGuildComms 0.4.3 beta"
+   git push origin v0.4.3-beta
    ```
 
    Only create the tag if it does not exist. For subsequent updates, change

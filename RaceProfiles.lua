@@ -56,7 +56,7 @@ function A:ResolveAccent()
     if valid[chosen] then return self.accents[chosen] end
     return nil
 end
-function A:VoiceText(kind, vars)
+function A:VoiceText(kind, vars, preview)
     -- Settings are per-character; the built-in English text is always available.
     local voice = self.char and self.char.voice or self.voiceDefaults
     local ownTemplate = self.db and self.db.templates and self.db.templates[kind]
@@ -69,6 +69,13 @@ function A:VoiceText(kind, vars)
     local accent = self:ResolveAccent()
     if accent and accent.text[kind] then
         text = accent.text[kind]
+    end
+    -- Randomize the chosen built-in template, never custom text or a Settings
+    -- sample. The help composer caches this choice for its preview and Send.
+    if self.db.randomizeMessages and not preview and self.ChooseMessageTemplate then
+        text = self:ChooseMessageTemplate(kind, lang, accent, text)
+    end
+    if accent and accent.text[kind] then
         -- Light optional personality; don't prepend an interjection to [LFG].
         if kind ~= "help" and accent.flair then
             if voice.accentStrength == "moderate" then

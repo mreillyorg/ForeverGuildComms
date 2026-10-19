@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title ForeverGuildComms 0.4.1-beta Installer
+title ForeverGuildComms 0.4.2-beta Installer
 pushd "%~dp0"
 if errorlevel 1 (
     echo ERROR: Could not locate the extracted installer directory.
@@ -13,7 +13,7 @@ if not exist "%~dp0..\ForeverGuildComms.toc" (
     pause
     exit /b 1
 )
-echo Installing ForeverGuildComms 0.4.1-beta ...
+echo Installing ForeverGuildComms 0.4.2-beta ...
 echo Using a process-only execution policy for this installer.
 echo Your permanent Windows PowerShell settings will not be changed.
 echo.

@@ -1,7 +1,7 @@
 # Code Structure
 
-**Analysis target**: Forever Guild Comms **0.4.1-beta**
-**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
+**Analysis target**: Forever Guild Comms **0.4.3-beta**
+**Supersedes**: the 0.4.1-beta pass of 2026-10-19T02:40:00Z
 
 ## Build System
 
@@ -18,7 +18,7 @@
 ## Notes: Welcomes, guild greetings, translated and RP-accented messages, levels, crafting and LFG alerts, tabard reminders, and group requests.
 ## Author: Michael Reilly
 ## IconTexture: Interface\AddOns\ForeverGuildComms\Media\Icon
-## Version: 0.4.1-beta
+## Version: 0.4.3-beta
 ## SavedVariables: ForeverGuildCommsDB
 ## SavedVariablesPerCharacter: ForeverGuildCommsCharDB
 ## OptionalDeps: Titan
@@ -26,6 +26,7 @@ Core.lua
 Languages.lua
 Accents.lua
 RaceProfiles.lua
+MessageVariants.lua
 Roster.lua
 Alerts.lua
 Tabard.lua
@@ -35,17 +36,28 @@ TitanMenu.lua
 Broker.lua
 ```
 
-Four TOC changes across this span: the version, a new `## IconTexture` line, an expanded
-`## Notes`, and four added file entries.
+Two TOC changes this span: the version and the `MessageVariants.lua` entry, inserted after
+`RaceProfiles.lua` and before `Roster.lua`.
 
-**Load order is now load-order-critical in a second place.** The three voice modules sit
-immediately after `Core.lua` and before `Roster.lua`. `Languages.lua` reads
-`A.defaults.templates` at load time to populate its English entry, so it must follow
-`Core.lua`; `RaceProfiles.lua` reads `A.accents` and `A.accentOrder`, so it must follow
-`Accents.lua`; and `Roster.lua` calls `A:CommsText`, which needs `A:VoiceText` to exist by
-the time a message is built. The current order satisfies all three.
+**Load-order constraints, now four.** The four data and voice modules sit between
+`Core.lua` and `Roster.lua`:
 
-- **Version coupling check**: all three locations agree at `0.4.1-beta` — TOC line 6,
+1. `Languages.lua` must follow `Core.lua` — it reads `A.defaults.templates` at load time to
+   populate its English entry.
+2. `RaceProfiles.lua` must follow `Accents.lua` and `Languages.lua` — it indexes their
+   tables.
+3. `MessageVariants.lua` must load before the first message is composed. Its placement
+   after `RaceProfiles.lua` is natural but not strictly required, since
+   `A:ChooseMessageTemplate` is reached through an existence check and receives the base
+   template and resolved accent as arguments rather than reading the other data tables.
+4. `Roster.lua` and `UI.lua` must follow the voice modules so `A:CommsText` resolves to the
+   full pipeline rather than the plain-`Format` fallback.
+
+The current order satisfies all four. `tests/syntax.lua` was updated in the same change to
+include the new module, so a missing TOC entry and a missing compile check cannot drift
+apart unnoticed.
+
+- **Version coupling check**: all three locations agree at `0.4.3-beta` — TOC line 6,
   `Core.lua` line 9, `README.md` line 1. The three-place rule is upheld.
 - **Interface number**: still `16001`.
 - **Not in the TOC, by requirement**: `Bindings.xml`. The client auto-loads it from the
@@ -111,60 +123,66 @@ Not shipped (nine offline harnesses):
 
 ## Existing Files Inventory
 
-| Path | Purpose | Lines | Since 0.2.0 |
+| Path | Purpose | Lines | Since 0.4.1 |
 | --- | --- | --- | --- |
-| `ForeverGuildComms.toc` | Manifest: interface, metadata, icon texture, SavedVariables, optional dep, 11-file load order | 15 | +0 lines, 4 edits |
-| `Core.lua` | Namespace, defaults, migrations, identity helpers, `ChatLimit`, `CommsText`, send queue, approval backlog, `SetOption`/`SetVoiceOption`, `NormalizeTiming`, `RunQuickAction`, binding labels, slash commands, the single 14-event frame | 476 | **+170** |
-| `Languages.lua` | 8 languages, `localeTemplates`, `localeRoleNames`, `localeActivityTypes`. Zero methods | 81 | **new** |
-| `Accents.lua` | 29 curated styles via a local `register` helper, plus `accentOrder`. Zero methods | 51 | **new** |
-| `RaceProfiles.lua` | `raceAccents`, `GetPlayerRace`, `GetAvailableAccents`, `ResolveAccent`, `VoiceText`, `LocalizeRoleText`, `LocalizeActivityType` | 102 | **new** |
-| `Roster.lua` | Roster read, baseline, diff, guild-join parsing. Now emits through `CommsText` | 123 | +0 |
-| `Alerts.lua` | Chat parsing, craft and group detection, recipe cache. `ScanRecipes` now returns a boolean | 99 | +1 |
-| `Tabard.lua` | City detection, tabard check, two popups | 64 | +0 |
-| `UI.lua` | Alerts inbox with review shortcut, review window, Ask-for-Help composer with localized labels | 286 | +1 |
-| `Options.lua` | Settings canvas: toggles, mode radios, timing fields, template editors, languages and accents section, scroll anchors | 286 | **+103** |
-| `TitanMenu.lua` | `PopulateTitanMenu`, `OpenTitanMenu` via Blizzard `MenuUtil` | 127 | **new** |
+| `ForeverGuildComms.toc` | Manifest: interface, metadata, icon texture, SavedVariables, optional dep, 12-file load order | 16 | +1 |
+| `Core.lua` | Namespace, defaults, migrations, identity helpers, `ChatLimit`, `CommsText`, send queue, approval backlog, `SetOption`/`SetVoiceOption`, `NormalizeTiming`, `PruneEventsSeen`, `RunQuickAction`, binding labels, slash commands, the single 14-event frame | 505 | **+29** |
+| `Languages.lua` | 8 languages, `localeTemplates`, `localeRoleNames`, `localeActivityTypes`. Zero methods | 81 | +0 |
+| `Accents.lua` | 29 curated styles via a local `register` helper, plus `accentOrder`. Zero methods | 51 | +0 |
+| `RaceProfiles.lua` | `raceAccents`, `GetPlayerRace`, `GetAvailableAccents`, `ResolveAccent`, `VoiceText`, `LocalizeRoleText`, `LocalizeActivityType` | 109 | **+7** |
+| `MessageVariants.lua` | `localeVariants` (68), `accentVariants` (136), `messageVariantBags`, `ChooseMessageTemplate` | 229 | **new** |
+| `Roster.lua` | Roster read, baseline, diff, guild-join parsing. Emits through `CommsText` | 123 | +0 |
+| `Alerts.lua` | Chat parsing, craft and group detection, recipe cache | 99 | +0 |
+| `Tabard.lua` | City detection, tabard check, two popups. Login-ordering fix and per-stay prompt dedup | 70 | **+6** |
+| `UI.lua` | Alerts inbox, review window, Ask-for-Help composer with fingerprinted draft caching | 302 | **+16** |
+| `Options.lua` | Settings canvas: toggles incl. `randomizeMessages`, mode radios, timing fields, template editors, languages and accents, non-consuming preview, scroll anchors | 287 | **+1** |
+| `TitanMenu.lua` | `PopulateTitanMenu`, `OpenTitanMenu` via Blizzard `MenuUtil` | 128 | **+1** |
 | `Broker.lua` | LibDataBroker object, counts, click routing | 38 | +0 |
-| `Bindings.xml` | Three opt-in hotkeys dispatching to `RunQuickAction` | 12 | **new** |
-| `tests/syntax.lua` | Compiles all shipped modules | 6 | +0 |
-| `tests/smoke.lua` | Roster diff, guild-join, chat parsing, recipe cache | 75 | +3 |
-| `tests/verify.lua` | Approval workflow, mode switching, guild-change safety | 69 | +3 |
-| `tests/settings.lua` | SavedVariables migration, options widgets | 87 | +24 |
-| `tests/timing.lua` | Queue delay arithmetic, login cooldown, zero cooldown | 55 | **new** |
-| `tests/titanmenu.lua` | LDB object plus the whole nested menu tree | 168 | **new** |
-| `tests/voice.lua` | Languages, accent filtering, custom-template precedence, UTF-8 | 46 | **new** |
-| `tests/keybindings.lua` | Executes the real XML handlers; asserts opt-in and no-send | 62 | **new** |
-| `tests/icon.lua` | Icon wiring across TOC, Broker, Options, installer, and the two textures | 21 | **new** |
-| `README.md` | Install, keybindings, features, commands, modes, templates, limitations, test sequence | 158 | **+80** |
-| `PACKAGING.md` | Release packaging process | 113 | **new** |
-| `.pkgmeta` | Packager config and release exclusions | 13 | **new** |
-| `.github/workflows/package.yml` | Tag-triggered release packaging | 30 | **new** |
-| `install/Install-ForeverGuildComms.ps1` | TOC-driven Windows installer with backup | 313 | **new** |
-| `install/Install-ForeverGuildComms.cmd` | Double-click launcher | 31 | **new** |
-| `install/INSTALL-README.txt` | End-user install instructions | 66 | **new** |
-| `.gitattributes` | LF line-ending policy | 21 | **new** |
-| `.gitignore` | Packager build output, local ZIPs, editor temp files | 9 | rewritten |
+| `Bindings.xml` | Three opt-in hotkeys dispatching to `RunQuickAction` | 12 | +0 |
+| `tests/syntax.lua` | Compiles all 12 shipped modules | 6 | +0 (list updated) |
+| `tests/smoke.lua` | Roster diff, guild-join, chat parsing, recipe cache | 75 | +0 |
+| `tests/verify.lua` | Approval workflow, mode switching, guild-change safety | 69 | +0 |
+| `tests/settings.lua` | SavedVariables migration, options widgets | 87 | +0 |
+| `tests/timing.lua` | Queue delay arithmetic, login cooldown, zero cooldown | 55 | +0 |
+| `tests/titanmenu.lua` | LDB object plus the whole nested menu tree | 168 | +0 |
+| `tests/voice.lua` | Languages, accent filtering, custom-template precedence, UTF-8 | 46 | +0 |
+| `tests/keybindings.lua` | Executes the real XML handlers; asserts opt-in and no-send | 62 | +0 |
+| `tests/icon.lua` | Icon wiring across TOC, Broker, Options, installer, and the two textures | 21 | +0 |
+| `tests/tabard_dedup.lua` | The login-ordering race, per-stay prompt dedup, city exit/re-entry, and the full dedup-cache lifecycle | 117 | **new** |
+| `tests/variations.lua` | Shuffle bags across every language and accent, variant completeness, custom override, non-consuming preview, preview/send stability | 93 | **new** |
+| `README.md` | Install, keybindings, features, commands, modes, templates, limitations, test sequence, 0.4.3 maintenance notes | 169 | **+11** |
+| `PACKAGING.md` | Release packaging process | 113 | version refs |
+| `.pkgmeta` | Packager config and release exclusions | 13 | +0 |
+| `.github/workflows/package.yml` | Tag-triggered release packaging | 30 | +0 |
+| `install/Install-ForeverGuildComms.ps1` | TOC-driven Windows installer with backup | 313 | version ref |
+| `install/Install-ForeverGuildComms.cmd` | Double-click launcher | 31 | version refs |
+| `install/INSTALL-README.txt` | End-user install instructions | 66 | version ref |
+| `.gitattributes` | LF line-ending policy | 21 | +0 |
+| `.gitignore` | Packager build output, local ZIPs, editor temp files | 9 | +0 |
 | `LICENSE` | Licence text | 21 | +0 |
-| `Media/Icon.tga` | In-game addon list icon | 64 KB | **new** |
-| `Media/ProjectIcon.png` | Distribution listing icon | 481 KB | **new** |
+| `Media/Icon.tga` | In-game addon list icon | 64 KB | +0 |
+| `Media/ProjectIcon.png` | Distribution listing icon | 481 KB | +0 |
 
-**Shipped Lua**: 1,733 lines across 11 modules, up from 1,097 across 7 (+58%).
+**Shipped Lua**: 2,022 lines across 12 modules, up from 1,733 across 11 (+17%).
 **Shipped non-Lua**: `Bindings.xml` 12 lines, two textures.
-**Offline harnesses**: 589 lines across 9 files, up from 207 across 4 (+184%).
-**Supporting scripts and docs**: 551 lines (installer 313, PACKAGING 113, README 158 are
-partly overlapping categories; installer plus launcher plus install readme is 410).
+**Offline harnesses**: 799 lines across 11 files, up from 589 across 9 (+36%).
 
-Test code is now **34% of shipped Lua** by line count, up from 19% at 0.2.0 and 8% at
-0.1.0.
+Test code is now **40% of shipped Lua** by line count, up from 34% at 0.4.1, 19% at 0.2.0,
+and 8% at 0.1.0. For the first time **every module is loaded by at least one harness**.
 
 ## Key Modules and Their Public Surface
 
-**62 `function A:` definitions**, up from 45. By module: Core 26, UI 11, Roster 7,
-RaceProfiles 6, Alerts 5, Broker 2, Tabard 2, TitanMenu 2, Options 1. `Languages.lua` and
-`Accents.lua` define none — they are pure data.
+**64 `function A:` definitions**, up from 62. By module: Core 27, UI 11, Roster 7,
+RaceProfiles 6, Alerts 5, Broker 2, Tabard 2, TitanMenu 2, Options 1, MessageVariants 1.
+`Languages.lua` and `Accents.lua` define none — they are pure data.
 
-**16 `local function` definitions**, up from 12: the four new ones are `register`
-(`Accents.lua`) and `SecondsText`, `AddSetting`, `AddTiming` (`TitanMenu.lua`).
+The two additions are `A:PruneEventsSeen` (`Core.lua`) and `A:ChooseMessageTemplate`
+(`MessageVariants.lua`). Two signatures widened: `A:CommsText(kind, vars, preview)` and
+`A:VoiceText(kind, vars, preview)`.
+
+**16 `local function` definitions**, unchanged. `MessageVariants.lua` declares none: unlike
+`Accents.lua`, which funnels its 29 entries through a local `register` helper, the variant
+tables are written as plain literals.
 
 ```mermaid
 classDiagram
@@ -302,7 +320,55 @@ Shared-namespace modules; single event dispatcher; guarded cross-file dispatch; 
 via timer plus boolean latch; queue with cooldown keys; defaults backfill; widget factory
 closures; row pooling with paging; two-phase identity normalization; pattern escaping for
 localized globals; late-bound delivery decision; identity-bound message records;
-asymmetric mode transitions; fail-safe setting normalization.
+asymmetric mode transitions; fail-safe setting normalization; single validating setter per
+scope; pure data modules; optional layer behind an indirection; customized content wins;
+encoding-aware truncation; self-healing dependent selections; declarative input with one
+dispatcher; deep-linking into a deferred panel; harness with a synthetic widget layer.
+
+### Shuffle bag with cross-bag memory *(new in 0.4.2)*
+- **Location**: `A:ChooseMessageTemplate` in `MessageVariants.lua`.
+- **Purpose**: vary wording without the randomness feeling repetitive or clustered.
+- **Implementation**: candidates are the base template plus any curated additions that are
+  non-empty and not equal to the base. With fewer than two candidates it returns the base
+  unchanged. Otherwise a bag keyed `kind:language:accentId` holds a Fisher-Yates-shuffled
+  index order and a position; each draw advances the position, and exhaustion reshuffles.
+  The subtle part is `bag.last`: on reshuffle, if the new order would open with the same
+  index the previous bag closed on, the first two entries are swapped. So "exhaust before
+  repeating" holds *within* a bag and "never twice in a row" holds *across* bag
+  boundaries. The bag also invalidates itself if the candidate count changes, which happens
+  when the player switches language or accent.
+
+### Fingerprinted draft cache *(new in 0.4.2)*
+- **Location**: `A:RequestText` in `UI.lua`.
+- **Purpose**: once wording varies, a redraw could otherwise change the message between
+  what the user read and what the Send button posts.
+- **Implementation**: a `\031`-joined fingerprint over the help template, the randomize
+  flag, all four voice settings, and all five interpolated values. If the fingerprint
+  matches the cached draft, the cached text is returned verbatim; otherwise a fresh draft
+  is composed. `ShowRequest` clears the draft so each opening gets a new wording, and
+  `SendHelpRequest` clears it after a successful send. The comment states the requirement
+  directly: the Send button must send exactly the wording shown in the preview.
+
+### Non-consuming preview *(new in 0.4.2)*
+- **Location**: the `preview` parameter threaded through `A:CommsText` and `A:VoiceText`.
+- **Purpose**: the Settings page renders a sample greeting on every refresh; without this
+  it would silently advance the shuffle bag.
+- **Implementation**: `Options.lua` passes `true`, and `VoiceText` skips variant selection
+  when it is set. `tests/variations.lua` asserts the bag table stays empty after a preview
+  call.
+
+### Bounded cache with a two-source sweep *(new in 0.4.3)*
+- **Location**: `A:PruneEventsSeen`, called from `A:IsDuplicate` and from a ticker.
+- **Purpose**: `A.eventsSeen` grew for the life of a session.
+- **Implementation**: two triggers cover both regimes — an activity-driven sweep inside
+  `IsDuplicate`, self-throttled to once per 60 seconds so a busy guild does not pay for a
+  full table walk per message, and a 300-second `C_Timer.NewTicker` registered in
+  `Initialize` so a quiet session still drains. Retention is
+  `timingLimits.loginCooldown.max`, chosen deliberately over the configured cooldown:
+  the comment notes a shorter window would re-admit a suppressed event if the user later
+  raised `loginCooldown`. The sweep also drops non-numeric and future-dated values, and
+  `IsDuplicate` gained a `now >= seenAt` guard, both hardening against a `GetTime`
+  discontinuity across a reload.
 
 ### Single validating setter *(new in 0.3.0)*
 - **Location**: `A:SetOption`, and `A:SetVoiceOption` for the per-character scope.

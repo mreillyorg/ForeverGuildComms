@@ -1,8 +1,19 @@
 # API Documentation
 
-**Analysis target**: Forever Guild Comms **0.4.1-beta**
-**Supersedes**: the 0.2.0-beta pass of 2026-10-19T00:52:00Z
+**Analysis target**: Forever Guild Comms **0.4.3-beta**
+**Supersedes**: the 0.4.1-beta pass of 2026-10-19T02:40:00Z
 New or changed entries are marked **new** or **changed**.
+
+## Changes in this span
+
+| Change | Release |
+| --- | --- |
+| `A:PruneEventsSeen(now)` added; `A:IsDuplicate` now sweeps and guards against clock regression | 0.4.3 |
+| `A:ChooseMessageTemplate(kind, language, accent, base)` added in a new module | 0.4.2 |
+| `A:CommsText(kind, vars, preview)` and `A:VoiceText(kind, vars, preview)` gained a third parameter | 0.4.2 |
+| `A:RequestText` now returns a fingerprinted cached draft | 0.4.2 |
+| `A:CheckTabard` restructured; two new latches | 0.4.3 |
+| `randomizeMessages` setting added, default `true` | 0.4.2 |
 
 ## REST APIs
 
@@ -63,10 +74,12 @@ count to stay at zero across every action.
 | `A:IsSelf` | `(name: string?, guid: string?)` | `boolean` | GUID first, then normalized name against `A.selfKeys`, then the name with only an explicit `-Realm` suffix removed |
 | `A:ChatLimit` | `(text: any)` | `string` | **New.** Truncates to 250 **bytes** without splitting a UTF-8 character: from byte 251, walk back while the byte is a continuation byte (`>= 128 and < 192`), then cut. Added because translations introduced multibyte text |
 | `A:Format` | `(template: any, vars: table?)` | `string` | **Changed.** Substitutes `{alpha}` placeholders, leaving unknown ones literal, then applies `ChatLimit` instead of a raw `sub(1, 250)` |
-| `A:CommsText` | `(kind: string, vars: table?)` | `string` | **New.** The voice indirection. Delegates to `A:VoiceText` when the voice modules are loaded, otherwise formats `A.db.templates[kind]` directly. This is what makes the three voice modules optional |
+| `A:CommsText` | `(kind: string, vars: table?, preview?)` | `string` | The voice indirection. Delegates to `A:VoiceText` when the voice modules are loaded, otherwise formats `A.db.templates[kind]` directly. This is what makes the data modules optional |
 | `A:CanUse` | `()` | `boolean` | `A.db.enabled` and `IsInGuild()` |
 | `A:Now` | `()` | `number` | `GetTime()` or `0` |
-| `A:IsDuplicate` | `(key: string, cooldown: number?)` | `boolean` | True if seen within the window; otherwise records the key. Note the side effect |
+| `A:IsDuplicate` | `(key: string, cooldown: number?)` | `boolean` | **Changed.** Now calls `A:PruneEventsSeen(now)` first, and the staleness test gained a `now >= seenAt` guard so a future-dated entry from a clock discontinuity cannot suppress indefinitely. Otherwise unchanged: true if seen within the window, else records the key. Note the side effect |
+| `A:PruneEventsSeen` | `(now: number?)` | nil | **New.** Sweeps `A.eventsSeen`, deleting entries that are non-numeric, future-dated, or older than `A.eventRetentionSeconds`. Self-throttled: returns immediately if the last sweep was under `A.eventPruneIntervalSeconds` (60) ago, so a busy guild does not pay for a table walk per message. Also driven by a 300-second ticker registered in `Initialize` so a quiet session still drains |
+| `A:CommsText` | `(kind, vars, preview?)` | `string` | **Changed.** Third parameter forwarded to `A:VoiceText`. When truthy it suppresses variant selection, so a Settings sample neither varies nor advances a shuffle bag |
 | `A:RoleText` | `(roles: table?, noneText: string?)` | `string` | Untranslated role labels joined with `/` |
 
 ### Core.lua — the send pipeline
@@ -92,6 +105,10 @@ count to stay at zero across every action.
 | `A:SetVoiceOption` | `(key, value)` | `boolean` | **The only per-character voice writer.** Validates `language` against `languageByID`, `accent` against the currently available list (with `auto`/`none` always allowed), `accentStrength` against the three-value enum, and `raceFilter` as a boolean. After a `language` or `raceFilter` change it revalidates the chosen accent and reverts to `auto` if it is no longer available. Then refreshes options, the request preview, and the broker |
 | `A:VoiceChoices` | `(key)` | `table` | The option list for a voice key: languages, available accents, or the three strengths |
 
+`A:SetOption` gained one special case in 0.4.2: a successful change to `randomizeMessages`
+also calls `A:UpdateRequestPreview` when it exists, so an open composer re-renders against
+the new setting rather than showing a stale draft.
+
 #### Timing limits
 
 | Key | Min | Max | Default |
@@ -101,6 +118,41 @@ count to stay at zero across every action.
 
 `loginCooldown = 0` is meaningful: it disables the repeat-login cooldown, and the Titan
 menu labels it "Off (every detected login)".
+
+#### Dedup-cache retention constants **(new in 0.4.3)**
+
+| Field | Value | Meaning |
+| --- | --- | --- |
+| `A.eventRetentionSeconds` | `timingLimits.loginCooldown.max` = 3600 | How long a dedup key is kept. Deliberately the longest *supported* cooldown, not the configured one: a shorter retention would re-admit a suppressed event if the user later raised `loginCooldown` |
+| `A.eventPruneIntervalSeconds` | 60 | Minimum gap between activity-triggered sweeps |
+| `A.lastEventPrune` | `nil` then number | Timestamp of the last sweep |
+
+### MessageVariants.lua **(new in 0.4.2)**
+
+| Method | Signature | Returns | Purpose |
+| --- | --- | --- | --- |
+| `A:ChooseMessageTemplate` | `(kind, language, accent, base)` | `string` | Returns `base` or one of the curated alternatives. Builds the candidate list as `{base}` plus entries from `accentVariants[accent.id][kind]` when an accent is active, or `localeVariants[language][kind]` otherwise, skipping non-strings, empties, and duplicates of `base`. With fewer than two candidates it returns `base` unchanged. Otherwise it draws from a shuffle bag keyed `kind:language:accentId` |
+
+#### Shuffle bag semantics
+
+| Property | Behaviour |
+| --- | --- |
+| Exhaust before repeating | A Fisher-Yates-shuffled index order is consumed one draw at a time; reshuffle happens only when the position passes the end |
+| No adjacent repeat across bags | On reshuffle, if the new order's first index equals the previous bag's last pick (`bag.last`), the first two entries are swapped |
+| Invalidation | The bag is rebuilt if `bag.count` no longer matches the candidate count, which is what happens when the player changes language or accent |
+| Scope | `A.messageVariantBags` is session-local and never persisted; a reload reshuffles |
+
+#### Data tables
+
+| Table | Shape | Contents |
+| --- | --- | --- |
+| `A.localeVariants` | `lang -> kind -> array of string` | 68 alternatives across all 8 languages. English carries 3 per kind, the other seven carry 2 |
+| `A.accentVariants` | `accentId -> kind -> array of string` | 136 alternatives across all 29 accents, 1-2 per kind |
+| `A.messageVariantBags` | `signature -> {order, position, count, last}` | Session-local selection state |
+
+Every language and every accent has entries for all four kinds — a completeness property
+`tests/variations.lua` asserts directly, so a gap is a test failure rather than a silent
+fall back to the base template.
 
 ### Core.lua — quick actions **(new in 0.4.1)**
 
@@ -159,7 +211,7 @@ variants are creative RP flavour rather than phonetic claims about real people.
 | `A:GetPlayerRace` | `()` | `string` | Reads `UnitRace("player")` for the locale-independent token, falling back to the localized name then `"Unknown"`. Probes both for a case-insensitive `skyborne` substring and returns `"Skyborne"` if found, because the Forever client may not publish that race's token |
 | `A:GetAvailableAccents` | `()` | `array of {id, label}` | Always starts with `auto` and `none`. Walks `accentOrder` and includes a style when its `language` matches the selected language and, if `raceFilter` is on, when it is in `raceAccents[GetPlayerRace()]`. A Human additionally gets the eight regional non-English variants, so a Spanish-speaking Human sees the Mexican, Cuban, and Spain styles |
 | `A:ResolveAccent` | `()` | `table?` | nil for `none`. For `auto`, walks `raceAccents` for the player's race and returns the first style that is still in the available list, else nil. Otherwise returns the chosen style if still valid, else nil |
-| `A:VoiceText` | `(kind, vars)` | `string` | The core rule. Returns `""` if the template is missing. **If the stored template differs from the shipped default, formats it verbatim and returns** — the player's text always wins. Otherwise takes `localeTemplates[lang][kind]`, overlays the resolved accent's phrase for that kind, applies flair by strength (never for `help`), then `Format`s |
+| `A:VoiceText` | `(kind, vars, preview?)` | `string` | **Changed.** The core rule. Returns `""` if the template is missing. **If the stored template differs from the shipped default, formats it verbatim and returns** — the player's text always wins. Otherwise takes `localeTemplates[lang][kind]`, overlays the resolved accent's phrase, then **selects a variant via `A:ChooseMessageTemplate` when `db.randomizeMessages` is on, `preview` is falsy, and the selector exists**, then applies flair by strength (never for `help`), then `Format`s. Note the ordering: variant selection happens *before* flair, so the prefix attaches to whichever wording was drawn |
 | `A:LocalizeRoleText` | `(roles, fallback)` | `string` | Joins localized role labels with `/`, falling back to the localized word for `flexible` or `any` |
 | `A:LocalizeActivityType` | `(kind)` | `string` | Localized `Dungeon`/`Raid`/`Quest`, falling back to the input |
 
@@ -208,8 +260,8 @@ Suspicious reads are discarded when `count == 0`, or `guildCount > 10` and
 
 | Method | Signature | Returns | Purpose |
 | --- | --- | --- | --- |
-| `A:CheckTabard` | `(initial?)` | nil | Records state on the first call and only prompts when `initial`; thereafter prompts on a transition under the relevant toggle |
-| `A:ScheduleTabardCheck` | `()` | nil | 1.2s debounce |
+| `A:CheckTabard` | `(initial?)` | nil | **Restructured in 0.4.3.** Always records `wasInCity` rather than returning early on the first call. `firstLoginCheck` is true when `initial` is set and `A.tabardInitialCheckDone` is not, which lets the 3-second login check prompt even though the 1.2-second `PLAYER_ENTERING_WORLD` check already initialised the flag. A city prompt fires when `firstLoginCheck or enteredCity`, the toggle is on, `A.tabardCityPrompted` is false, and the tabard is absent; it then sets `tabardCityPrompted`. Leaving a city clears that flag, so re-entry can prompt again. The exit branch now requires `before` to be truthy |
+| `A:ScheduleTabardCheck` | `()` | nil | 1.2s debounce. Unchanged |
 
 ### UI.lua **(one changed method)**
 
@@ -222,7 +274,9 @@ Suspicious reads are discarded when `count == 0`, or `guildCount > 10` and
 | `A:UpdateApprovalsUI` | `()` | nil | Clamps the page, toggles the empty label, binds `row.entryIndex`, labels rows from the entry `kind` |
 | `A:ShowApprovals` | `()` | nil | Refresh then show |
 | `A:BuildRequestUI` | `()` | nil | `FGCRequestFrame`: activity box (100 chars), type cycler, role checkboxes, preview, Send and Cancel |
-| `A:RequestText` | `()` | `string` | **Changed.** Computes `custom = db.templates.help ~= defaults.templates.help`. When custom, uses the raw activity type and `A:RoleText`; otherwise uses `A:LocalizeActivityType` and `A:LocalizeRoleText`. Routes through `A:CommsText("help", ...)`. So a customized help template keeps English labels, matching the template the player actually wrote |
+| `A:RequestText` | `()` | `string` | **Changed in 0.4.2.** Computes `custom = db.templates.help ~= defaults.templates.help`; when custom uses the raw activity type and `A:RoleText`, otherwise the localized variants. Then builds a `\031`-joined **fingerprint** over the help template, `db.randomizeMessages`, all four voice settings, and all five interpolated values. If `A.requestDraft` exists with a matching fingerprint, its cached text is returned unchanged; otherwise a fresh draft is composed through `A:CommsText`. This guarantees the Send button posts exactly the wording the preview showed |
+| `A:ShowRequest` | `()` | nil | **Changed.** Clears `A.requestDraft` before refreshing, so each opening of the composer draws a fresh wording |
+| `A:SendHelpRequest` | `()` | nil | **Changed.** Clears `A.requestDraft` after a successful send, alongside stamping `lastManualRequest` and hiding the frame |
 | `A:UpdateRequestPreview` | `()` | nil | Writes `RequestText()` into the preview |
 | `A:ShowRequest` | `()` | nil | Refresh then show |
 | `A:SendHelpRequest` | `()` | nil | Requires `CanUse`, a non-empty activity, and 20s since the last manual request |
@@ -272,6 +326,7 @@ instead.
 | `greetLogin` | boolean | `true` | BT-1 |
 | `greetJoin` | boolean | `true` | BT-2 |
 | `congratulateLevel` | boolean | `true` | BT-3 |
+| `randomizeMessages` | boolean | `true` | **New in 0.4.2.** Enables BT-14 wording variation for the four built-in templates. Exposed in both Settings and the Titan menu. Note this is the project's first new setting whose default *changes* existing output on upgrade |
 | `craftingAlerts` | boolean | `true` | BT-4 |
 | `groupAlerts` | boolean | `true` | BT-5 |
 | `tabardInCity` | boolean | `true` | BT-6 |

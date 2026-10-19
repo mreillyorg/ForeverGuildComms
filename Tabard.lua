@@ -38,19 +38,25 @@ function A:CheckTabard(initial)
     if not self.db or not self:CanUse() then return end
     local nowCity = inMajorCity()
     local before = self.wasInCity
-    if before == nil then
-        self.wasInCity = nowCity
-        if not initial then return end
-        if nowCity and self.db.tabardInCity and not guildTabardEquipped() then
+    self.wasInCity = nowCity
+
+    -- PLAYER_ENTERING_WORLD can schedule a 1.2-second transition check ahead
+    -- of the 3-second login check. A login check must therefore be able to
+    -- prompt even if the transition check already initialized wasInCity.
+    local firstLoginCheck = initial and not self.tabardInitialCheckDone
+    if firstLoginCheck then self.tabardInitialCheckDone = true end
+
+    -- Show at most one city prompt per city stay, including if an ordinary
+    -- zone transition check already displayed it before the initial check.
+    if not nowCity then self.tabardCityPrompted = false end
+    if nowCity then
+        local enteredCity = before ~= nil and not before
+        if (firstLoginCheck or enteredCity) and self.db.tabardInCity
+            and not self.tabardCityPrompted and not guildTabardEquipped() then
+            self.tabardCityPrompted = true
             StaticPopup_Show("FGC_TABARD_CITY")
         end
-        return
-    end
-    if before == nowCity then return end
-    self.wasInCity = nowCity
-    if nowCity and self.db.tabardInCity and not guildTabardEquipped() then
-        StaticPopup_Show("FGC_TABARD_CITY")
-    elseif not nowCity and self.db.tabardOnExit and guildTabardEquipped() then
+    elseif before and self.db.tabardOnExit and guildTabardEquipped() then
         StaticPopup_Show("FGC_TABARD_EXIT")
     end
 end
